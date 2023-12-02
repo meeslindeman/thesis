@@ -1,0 +1,19 @@
+8 10
+Jasper M
+Jon M
+Lysa F
+Alys F
+Elys M 
+Ronnel M 
+Robin M
+Elbert M
+Jasper Jon Gave_birth_to
+Jasper Alys Gave_birth_to
+Jasper Ronnel Gave_birth_to
+Jon Lysa Married
+Jon Alys Sibling
+Jon Ronnel Sibling
+Alys Ronnel Sibling
+Alys Elys Married
+Jon Robin Gave_birth_to
+Ronnel Elbert Gave_birth_to

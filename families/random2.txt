@@ -1,0 +1,20 @@
+8 10
+Irene F
+James M
+Karen F
+Leo M
+Mia F
+Neil M
+Olivia F
+Paul M
+Irene James Married
+James Karen Sibling
+Karen Leo Married
+Leo Mia Sibling
+Mia Neil Married
+Neil Olivia Sibling
+Olivia Paul Married
+Paul Irene Sibling
+James Mia Gave_birth_to
+Karen Neil Gave_birth_to
+Leo Olivia Gave_birth_to

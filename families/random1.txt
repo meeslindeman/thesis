@@ -1,0 +1,21 @@
+8 11
+Alice F
+Bob M
+Carol F
+Dave M
+Eve F
+Frank M
+Grace F
+Henry M
+Alice Bob Married
+Bob Carol Sibling
+Carol Dave Married
+Dave Eve Sibling
+Eve Frank Married
+Frank Grace Sibling
+Grace Henry Married
+Henry Alice Sibling
+Bob Eve Gave_birth_to
+Carol Frank Gave_birth_to
+Dave Grace Gave_birth_to
+Eve Henry Gave_birth_to

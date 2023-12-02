@@ -1,0 +1,26 @@
+8 16
+Balon M
+Alannys F
+Euron M 
+Aeron M 
+Rodrik M 
+Maron M
+Yara F
+Theon M 
+Balon Alannys Married
+Balon Euron Sibling
+Balon Aeron Sibling
+Balon Rodrik Gave_birth_to
+Balon Maron Gave_birth_to
+Balon Yara Gave_birth_to
+Balon Theon Gave_birth_to
+Alannys Rodrik Gave_birth_to
+Alannys Maron Gave_birth_to
+Alannys Yara Gave_birth_to
+Alannys Theon Gave_birth_to
+Rodrik Maron Sibling
+Rodrik Yara Sibling
+Rodrik Theon Sibling
+Maron Yara Sibling
+Maron Theon Sibling
+Yara Theon Sibling
