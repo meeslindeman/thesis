@@ -11,8 +11,8 @@ original_graph, masked_graph, target_node_idx = dataset[1]
 
 options = Options()
 
-sender = Sender(embedding_size=options.embedding_size, hidden_size=options.hidden_size, vocab_size=options.vocab_size, temp=1.0)
-receiver = Receiver(embedding_size=options.embedding_size, hidden_size=options.hidden_size)
+sender = Sender(embedding_size=options.embedding_size, vocab_size=options.vocab_size)
+receiver = Receiver(embedding_size=options.embedding_size, vocab_size=options.vocab_size)
 
 # Sender produces a message
 sender_output = sender(original_graph, target_node_idx)
@@ -25,6 +25,6 @@ print("Receiver's output:", receiver_output)
 print("Receiver's shape: ", receiver_output.shape)
 
 # Checking if the receiver's highest probability node is the target node
-# predicted_node = torch.argmax(receiver_output, dim=0)
-# print("Predicted target node:", predicted_node.item(), "\nActual target node:", target_node_idx)
+predicted_node = torch.argmax(receiver_output, dim=0)
+print("Predicted target node:", predicted_node.item(), "\nActual target node:", target_node_idx)
 
