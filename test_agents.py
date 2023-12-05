@@ -11,8 +11,8 @@ original_graph, masked_graph, target_node_idx = dataset[1]
 
 options = Options()
 
-sender = Sender(embedding_size=options.embedding_size, vocab_size=options.vocab_size)
-receiver = Receiver(embedding_size=options.embedding_size, vocab_size=options.vocab_size)
+sender = Sender(embedding_size=options.embedding_size, hidden_size=options.vocab_size)
+receiver = Receiver(embedding_size=options.embedding_size, hidden_size=options.vocab_size)
 
 # Sender produces a message
 sender_output = sender(original_graph, target_node_idx)
