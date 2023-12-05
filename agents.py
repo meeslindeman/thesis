@@ -1,49 +1,50 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from graph.graph_embeddings import Embeddings
+from torch_geometric.data import Data
+from torch_geometric.nn import GATv2Conv
 
 class Sender(nn.Module):
     def __init__(self, embedding_size, hidden_size, vocab_size, temp):
         super(Sender, self).__init__()
         self.temp = temp
 
-        self.embedding = Embeddings(embedding_size)
-        self.fc = nn.Linear((embedding_size * 4), hidden_size)
+        self.num_node_features = 1
+        self.emb = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=2, concat=True)
+        self.fc = nn.Linear(embedding_size*4, hidden_size)
 
-    def forward(self, data, target_node_idx):
-        embeddings = self.embedding(data)
-        target_embedding = embeddings[target_node_idx]
+    def forward(self, data: Data, target_node_idx) -> torch.Tensor:
+        node_features, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
+
+        graph_embedding = self.emb(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
+        target_embedding = graph_embedding[target_node_idx]
         
-        # Reshape target_embedding to match the dimensions of embeddings
-        target_embedding = target_embedding.unsqueeze(0)  # Reshape to [1, embedding_size]
+        target_embedding = target_embedding.unsqueeze(0)
 
-        # Ensure target_embedding is repeated for each element in the batch
-        target_embedding = target_embedding.repeat(embeddings.size(0), 1)
+        target_embedding = target_embedding.repeat(graph_embedding.size(0), 1)
 
-        # Combine and transform the representations
-        combined_representation = torch.cat([embeddings, target_embedding], dim=1)
+        combined_representation = torch.cat([graph_embedding, target_embedding], dim=1)
         output = self.fc(combined_representation)
+
         return output
 
 class Receiver(nn.Module):
     def __init__(self, embedding_size, hidden_size):
         super(Receiver, self).__init__()
+        
+        self.num_node_features = 1
+        self.emb = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=2, concat=True)
+        self.fc = nn.Linear(hidden_size, embedding_size*2)
 
-        self.embedding = Embeddings(embedding_size)
-        self.fc = nn.Linear(hidden_size, (embedding_size * 2))
+    def forward(self, data: Data, message, _aux_input=None) -> torch.Tensor:
+        node_features, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
 
-    def forward(self, data, message, _aux_input=None):
-        embeddings = self.embedding(data) 
+        graph_embedding = self.emb(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
         message_embedding = self.fc(message)
 
         message_embedding_t = message_embedding.t()
 
-        # Compute dot products
-        dot_products = torch.matmul(embeddings, message_embedding_t)
-
-        # Convert dot products to probabilities or scores
-        # For example, using softmax if the task is to choose one node out of many
+        dot_products = torch.matmul(graph_embedding, message_embedding_t)
         probabilities = F.softmax(dot_products, dim=1)
 
         return probabilities

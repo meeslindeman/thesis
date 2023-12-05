@@ -2,7 +2,6 @@ import torch
 import egg.core as core
 import torch.nn.functional as F
 from graph.build_dataset import CustomGraphDataset
-from graph.graph_embeddings import Embeddings
 from agents import Sender, Receiver
 from options import Options
 
