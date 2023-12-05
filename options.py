@@ -3,15 +3,17 @@ from dataclasses import dataclass
 
 @dataclass
 class Options:
+    # Agents
     embedding_size: int = 64
-    vocab_size: int = 50
+    vocab_size: int = 64
+    hidden_size: int = 64
+    sender_cell: str = 'gru' # 'rnn', 'gru', 'lstm'
+
+    # Training
     n_epochs: int = 10
     batch_size: int = 32
     training_mode: str = 'gs'  # 'rf' for Reinforce or 'gs' for Gumbel-Softmax
-    hidden_size: int = 64
-    max_len: int = 5
-    output_size: int = 8
-    sender_cell: str = 'gru' # 'rnn', 'gru', 'lstm'
+
 
     def init_egg_params(self):
         egg_params = egg.core.init(params=[
