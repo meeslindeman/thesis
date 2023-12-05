@@ -3,50 +3,54 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GATv2Conv
+from torch_geometric.nn import global_mean_pool
 from graph.build_dataset import CustomGraphDataset
 
 dataset = CustomGraphDataset(root='/Users/meeslindeman/Library/Mobile Documents/com~apple~CloudDocs/Thesis/Code/families')
-original_graph, masked_graph, target_node_idx = dataset[1]
 
-data = original_graph
+print(f'Dataset: {dataset}:')
+print('====================')
+print(f'Number of graphs: {len(dataset)}')
+print(f'Number of features: {dataset.num_features}')
 
-class GAT(nn.Module):
-    def __init__(self, embedding_size):
-        super().__init__()
-        self.conv1 = GATv2Conv(dataset.num_features, embedding_size)
-        self.conv2 = GATv2Conv(embedding_size, 32)
+data, data_mask, target = dataset[0]  # Get the first graph object.
 
-    def forward(self, data: Data) -> torch.Tensor:
-        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
+print()
+print(data)
+print('=============================================================')
+
+# Gather some statistics about the first graph.
+print(f'Number of nodes: {data.num_nodes}')
+print(f'Number of edges: {data.num_edges}')
+print(f'Average node degree: {data.num_edges / data.num_nodes:.2f}')
+print(f'Has isolated nodes: {data.has_isolated_nodes()}')
+print(f'Has self-loops: {data.has_self_loops()}')
+print(f'Is undirected: {data.is_undirected()}')
+
+class Model(nn.Module):
+    def __init__(self, hidden_channels):
+        super(Model, self).__init__()
+        
+        self.conv1 = GATv2Conv(data.num_node_features, hidden_channels)
+        self.conv2 = GATv2Conv(hidden_channels, hidden_channels)
+        self.ln = nn.Linear(hidden_channels, 32)
+
+    def forward(self, x, edge_index, batch):
+        # 1. Obtain node embeddings 
         x = self.conv1(x, edge_index)
         x = F.relu(x)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
-        return x
+        x = self.conv3(x, edge_index)
 
-class Sender(nn.Module):
-    def __init__(self, embedding_size, vocab_size):
-        super(Sender, self).__init__()
-        self.conv1 = GATv2Conv(dataset.num_features, embedding_size)
-        self.conv2 = GATv2Conv(embedding_size, 32)
+        # 2. Readout layer
+        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
 
-    def forward(self, data, target_node_idx):
-        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = self.conv2(x, edge_index)
-        x = F.relu(x)
-        return x
+        # 3. Apply a final classifier
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = self.lin(x)
+        
+        return x  
 
-class Receiver(nn.Module):
-    def __init__(self, embedding_size, vocab_size):
-        super(Receiver, self).__init__()
-        self.embedding = Embeddings(embedding_size)
-        output = embedding_size * 2
-        self.fc = nn.Linear(vocab_size, output)
-
-    def forward(self, data, message, _aux_input=None):
-        embeddings = self.embedding(data) # [num_nodes, 128]
-        message_embedding = self.fc(message) # [128]
-        dot_products = torch.matmul(embeddings, message_embedding.t())
-        return dot_products
+model = Model(hidden_channels=64)
+print(model)

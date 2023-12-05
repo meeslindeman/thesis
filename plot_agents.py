@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 
-from working_agents import Sender, Receiver
+from agents_basic import Sender, Receiver
 from graph.build_dataset import CustomGraphDataset
 
 def run_experiment(embedding_size, vocab_size, num_runs):
@@ -9,8 +9,8 @@ def run_experiment(embedding_size, vocab_size, num_runs):
 
     for _ in range(num_runs):
         # Initialize Sender and Receiver
-        sender = Sender(embedding_size=embedding_size, vocab_size=vocab_size)
-        receiver = Receiver(embedding_size=embedding_size, vocab_size=vocab_size)
+        sender = Sender(embedding_size=embedding_size, message=vocab_size)
+        receiver = Receiver(embedding_size=embedding_size, message=vocab_size)
 
         # Load your dataset and run your model here
         dataset = CustomGraphDataset(root='/Users/meeslindeman/Library/Mobile Documents/com~apple~CloudDocs/Thesis/Code/families')

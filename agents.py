@@ -5,7 +5,7 @@ from torch_geometric.data import Data
 from torch_geometric.nn import GATv2Conv
 
 class Sender(nn.Module):
-    def __init__(self, embedding_size, hidden_size, vocab_size):
+    def __init__(self, embedding_size, hidden_size):
         super(Sender, self).__init__()
 
         self.num_node_features = 1
@@ -44,6 +44,7 @@ class Sender(nn.Module):
 class Receiver(nn.Module):
     def __init__(self, embedding_size, hidden_size):
         super(Receiver, self).__init__()
+
         self.num_node_features = 1
         # Convolutional layers
         self.conv1 = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=2, concat=True)

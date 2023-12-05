@@ -6,7 +6,7 @@ from agents import Sender, Receiver
 from options import Options
 
 def get_game(options: Options):
-    sender = Sender(options.embedding_size, options.hidden_size, options.vocab_size)
+    sender = Sender(options.embedding_size, options.hidden_size)
     receiver = Receiver(options.embedding_size, options.hidden_size)
 
     if options.training_mode == 'gs':
@@ -46,6 +46,7 @@ if __name__ == "__main__":
     # Receiver tries to identify the target node
     receiver_output = game.receiver(masked_graph, sender_output)
     print("Receiver's output:", receiver_output)
+    print("Receiver's shape:", receiver_output.shape)
 
     # Checking if the receiver's highest probability node is the target node
     predicted_node = torch.argmax(receiver_output, dim=1)
