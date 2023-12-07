@@ -42,7 +42,7 @@ class Receiver(nn.Module):
         # To process the message
         self.fc1 = nn.Linear(message, embedding_size * 2)
 
-    def forward(self, data: Data, message) -> torch.Tensor:
+    def forward(self, message, data: Data) -> torch.Tensor:
         node_features, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
 
         # Generate embeddings for the graph

@@ -25,6 +25,7 @@ class Sender(nn.Module):
 
         # Second convolutional layer
         x = self.conv2(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        x = F.relu(x)
         
         # Target node embedding
         target_embedding = x[target_node_idx]
@@ -50,22 +51,24 @@ class Receiver(nn.Module):
         self.conv1 = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=2, concat=True)
         self.conv2 = GATv2Conv(embedding_size * 2, embedding_size, edge_dim=1, heads=2, concat=True)
         # To process the message
-        self.fc1 = nn.Linear(embedding_size * 4, hidden_size)
+        self.fc1 = nn.Linear(hidden_size, embedding_size * 2)
 
-    def forward(self, data: Data, message) -> torch.Tensor:
+    def forward(self, message, data, _aux_input=None):
         node_features, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
 
-        # Generate embeddings for the graph
+        # First convolutional layer with ReLU activation
         x = self.conv1(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
         x = F.relu(x)
+
+        # Second convolutional layer
         x = self.conv2(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        x = F.relu(x)          
 
         # Adjust the message processing to handle the new message format
-        message_embedding = self.fc1(message)
-        message_embedding_t = message_embedding.t()
+        message_embedding = self.fc1(message)                                       
 
         # Comparing message with each node's embedding
-        dot_products = torch.matmul(x, message_embedding_t)
+        dot_products = torch.matmul(x, message_embedding.t())
         probabilities = F.softmax(dot_products, dim=1)  # Convert to probabilities
 
         return probabilities

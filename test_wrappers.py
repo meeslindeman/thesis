@@ -44,11 +44,23 @@ if __name__ == "__main__":
     print("Sender's shape:", sender_output.shape)
 
     # Receiver tries to identify the target node
-    receiver_output = game.receiver(masked_graph, sender_output)
+    receiver_output = game.receiver(sender_output, masked_graph)
+
     print("Receiver's output:", receiver_output)
     print("Receiver's shape:", receiver_output.shape)
 
     # Checking if the receiver's highest probability node is the target node
-    predicted_node = torch.argmax(receiver_output, dim=1)
-    print("Predicted target node:", predicted_node.item(), "\nActual target node:", target_node_idx)
+    # Reshape receiver_output to merge the last two dimensions
+    reshaped_output = receiver_output.reshape(receiver_output.size(0), -1)
+
+    # Now apply argmax on this reshaped tensor
+    predicted_nodes = torch.argmax(reshaped_output, dim=1)
+
+    print(receiver_output)
+
+    # Iterate over each sample and print the predicted and actual node
+    for i, predicted_node in enumerate(predicted_nodes):
+        print(f"Sample {i}: Predicted target node: {predicted_node.item()}, Actual target node: {target_node_idx}")
+
+
 
