@@ -1,7 +1,8 @@
 import torch
 import egg.core as core
 import torch.nn.functional as F
-from graph.build_dataset import CustomGraphDataset
+import random
+from graph_b.dataset import FamilyGraphDataset
 from agents import Sender, Receiver
 from options import Options
 
@@ -32,35 +33,23 @@ if __name__ == "__main__":
     options = Options()
 
     # Load the dataset and extract a graph
-    dataset = CustomGraphDataset(root='/Users/meeslindeman/Library/Mobile Documents/com~apple~CloudDocs/Thesis/Code/families')
-    original_graph, masked_graph, target_node_idx = dataset[1]
+    dataset = FamilyGraphDataset(root='/Users/meeslindeman/Library/Mobile Documents/com~apple~CloudDocs/Thesis/Code/data', number_of_graphs=10, generations=3)
+    data = dataset[0]
 
     # Initialize the game
     game = get_game(options)
 
+    target_node_idx = random.randint(0, data.num_nodes - 1)
+
     # Sender produces a message
-    sender_output = game.sender(original_graph, target_node_idx)
+    sender_output = game.sender(data, target_node_idx)
     print("Sender's message:", sender_output)
     print("Sender's shape:", sender_output.shape)
 
     # Receiver tries to identify the target node
-    receiver_output = game.receiver(sender_output, masked_graph)
-
+    receiver_output = game.receiver(sender_output, data)
     print("Receiver's output:", receiver_output)
     print("Receiver's shape:", receiver_output.shape)
 
     # Checking if the receiver's highest probability node is the target node
-    # Reshape receiver_output to merge the last two dimensions
     reshaped_output = receiver_output.reshape(receiver_output.size(0), -1)
-
-    # Now apply argmax on this reshaped tensor
-    predicted_nodes = torch.argmax(reshaped_output, dim=1)
-
-    print(receiver_output)
-
-    # Iterate over each sample and print the predicted and actual node
-    for i, predicted_node in enumerate(predicted_nodes):
-        print(f"Sample {i}: Predicted target node: {predicted_node.item()}, Actual target node: {target_node_idx}")
-
-
-
