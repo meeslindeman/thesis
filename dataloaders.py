@@ -1,9 +1,19 @@
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
-#from torch.utils.data import DataLoader
 
 def create_data_loaders(dataset, batch_size, train_split=0.8):
+    """
+    Create data loaders for training and validation datasets.
 
+    Args:
+        dataset (Dataset): The dataset to be split into training and validation sets.
+        batch_size (int): The batch size for the data loaders.
+        train_split (float, optional): The ratio of the dataset to be used for training. Defaults to 0.8.
+
+    Returns:
+        train_loader (DataLoader): The data loader for the training dataset.
+        valid_loader (DataLoader): The data loader for the validation dataset.
+    """
     train_size = int(train_split * len(dataset))
     valid_size = len(dataset) - train_size
 
