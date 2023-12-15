@@ -8,11 +8,12 @@ class Options:
     hidden_size: int = 16
     sender_cell: str = 'gru' # 'rnn', 'gru', 'lstm'
     max_len: int = 4
+    temp: int = 1.0
 
     # Training
     n_epochs: int = 10
     vocab_size: int = 20
-    batch_size: int = 16
+    batch_size: int = 2
     training_mode: str = 'gs'  # 'rf' for Reinforce or 'gs' for Gumbel-Softmax
 
 
