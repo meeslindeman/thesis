@@ -1,26 +1,44 @@
 import egg.core as core
-from agents import Sender, Receiver
-from options import Options
 import torch.nn.functional as F
+from agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform
+from options import Options
 
-def get_game(options: Options):
-    sender = Sender(options.embedding_size, options.hidden_size)
-    receiver = Receiver(options.embedding_size, options.hidden_size)
-
-    if options.training_mode == 'gs':
-        sender_wrapped = core.RnnSenderGS(sender, options.vocab_size, options.embedding_size, options.hidden_size, max_len=5, temperature=1.0, cell=options.sender_cell)
-        receiver_wrapped = core.RnnReceiverGS(receiver, options.vocab_size, options.embedding_size, options.hidden_size, cell=options.sender_cell)
-        game = core.SenderReceiverRnnGS(sender_wrapped, receiver_wrapped, loss)
-    elif options.training_mode == 'rf':
-        sender_wrapped = core.RnnSenderReinforce(sender, options.vocab_size, options.embedding_size, options.hidden_size, max_len=5)
-        receiver_wrapped = core.RnnReceiverReinforce(receiver, options.vocab_size, options.embedding_size, options.hidden_size)
-        game = core.SenderReceiverRnnReinforce(sender_wrapped, receiver_wrapped, loss)
+def get_game(opts: Options):
+    if opts.agents == "dual":
+        sender = SenderDual(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverDual(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
+    elif opts.agents == "transform":
+        sender = SenderTransform(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverTransform(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
+    elif opts.agents == "gat":
+        sender = SenderGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
     else:
-        raise ValueError(f"Unknown training mode: {options.training_mode}")
+        print("Invalid agent type")
 
-    return game
+    sender_gs = core.RnnSenderGS(sender, 
+                                 opts.vocab_size, 
+                                 opts.embedding_size, 
+                                 opts.hidden_size, 
+                                 max_len=opts.max_len, 
+                                 temperature=opts.gs_tau, 
+                                 cell=opts.sender_cell)
+    
+    receiver_gs = core.RnnReceiverGS(receiver, 
+                                     opts.vocab_size, 
+                                     opts.embedding_size, 
+                                     opts.hidden_size, 
+                                     cell=opts.sender_cell)
 
-def loss(_sender_input, _message, _receiver_input, receiver_output, labels, _aux_input):
+    def loss_nll(_sender_input, _message, _receiver_input, receiver_output, labels, _aux_input):
+        """
+        NLL loss - differentiable and can be used with both GS and Reinforce
+        """
         nll = F.nll_loss(receiver_output, labels, reduction="none")
         acc = (labels == receiver_output.argmax(dim=1)).float().mean()
         return nll, {"acc": acc}
+
+    game = core.SenderReceiverRnnGS(sender_gs, receiver_gs, loss_nll)
+
+    return game
+

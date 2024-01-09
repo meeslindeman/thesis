@@ -1,91 +1,156 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.data import Data
-from torch_geometric.nn import GATv2Conv
+from network import GAT, Transform
 
-class Sender(nn.Module):
-    """
-    Sender module that takes input data and target node index, and outputs a hidden representation of the target node.
-    """
-    def __init__(self, embedding_size, hidden_size, temperature):
-        super(Sender, self).__init__()
-        self.num_node_features = 2
-        self.heads = 2
+num_node_features = 4
+
+class SenderDual(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size, temperature):
+        super(SenderDual, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
+        self.hidden_size = hidden_size
         self.temp = temperature
 
-        self.conv1 = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=self.heads, concat=True)
-        self.conv2 = GATv2Conv(-1, embedding_size, edge_dim=1, heads=self.heads, concat=True)
-        self.fc = nn.Linear((embedding_size * self.heads), hidden_size)
+        self.transform = Transform(self.num_node_features, embedding_size, heads)
+        self.gat = GAT(self.num_node_features, embedding_size, heads) 
+        self.fc = nn.Linear((embedding_size * heads), hidden_size) 
 
-    def forward(self, data: Data, _aux_input=None) -> torch.Tensor:
-        """
-        Forward pass of the sender module.
+    def forward(self, x, _aux_input):
+        data = _aux_input
 
-        Args:
-            data (Data): Input data containing node features, edge indices, and edge attributes.
-            target_node_idx (int): Index of the target node.
+        target_node_idx = data.target_node_idx
 
-        Returns:
-            torch.Tensor: Hidden representation of the target node.
-        """
-        x, edge_index, edge_attr, labels = data.x, data.edge_index, data.edge_attr, data.labels
+        h_t = self.transform(data)
 
-        h = self.conv1(x=x, edge_index=edge_index, edge_attr=edge_attr)     # nodes x embedding size
-        h = F.relu(h)
+        h_g = self.gat(data)
 
-        h = self.conv2(x=x, edge_index=edge_index, edge_attr=edge_attr)     # nodes x embedding size
-        h = F.relu(h)
+        h = h_t + h_g
 
-        target_node_idx = torch.nonzero(labels, as_tuple=True)[0].item()
+        target_embedding = h[target_node_idx]           
+
+        output = self.fc(target_embedding)                           
+
+        return output.view(-1, self.hidden_size)
+
+class ReceiverDual(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size):
+        super(ReceiverDual, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
+        self.hidden_size = hidden_size
+
+        self.transform = Transform(self.num_node_features, embedding_size, heads)
+        self.gat = GAT(self.num_node_features, embedding_size, heads) 
+        self.fc = nn.Linear(hidden_size, (embedding_size * heads))
+
+    def forward(self, message, _input, _aux_input):
+        data = _aux_input
+
+        h_t = self.transform(data)
+
+        h_g = self.gat(data)
+
+        h = h_t + h_g   
+
+        message_embedding = self.fc(message)        
+
+        dot_products = torch.matmul(h, message_embedding.t()).t()   
+
+        probabilities = F.log_softmax(dot_products, dim=1)                      
+
+        return probabilities
+
+class SenderGAT(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size, temperature):
+        super(SenderGAT, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
+        self.hidden_size = hidden_size
+        self.temp = temperature
+
+        self.gat = GAT(self.num_node_features, embedding_size, heads) 
+        self.fc = nn.Linear((embedding_size * heads), hidden_size) 
+
+    def forward(self, x, _aux_input):
+        data = _aux_input
+
+        target_node_idx = data.target_node_idx
+
+        h = self.gat(data)
+
+        target_embedding = h[target_node_idx]           
+
+        output = self.fc(target_embedding)                           
+
+        return output.view(-1, self.hidden_size)
+
+class ReceiverGAT(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size):
+        super(ReceiverGAT, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
+        self.hidden_size = hidden_size
+
+        self.gat = GAT(self.num_node_features, embedding_size, heads)
+        self.fc = nn.Linear(hidden_size, (embedding_size * heads))
+
+    def forward(self, message, _input, _aux_input):
+        data = _aux_input
+
+        h = self.gat(data)   
+
+        message_embedding = self.fc(message)                 
+
+        dot_products = torch.matmul(h, message_embedding.t()).t()   
+
+        probabilities = F.log_softmax(dot_products, dim=1)                      
+
+        return probabilities
+
+class SenderTransform(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size, temperature):
+        super(SenderTransform, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
+        self.hidden_size = hidden_size
+        self.temp = temperature
+          
+        self.transform = Transform(self.num_node_features, embedding_size, heads) 
+        self.fc = nn.Linear((embedding_size * heads), hidden_size) 
+
+    def forward(self, x, _aux_input):
+        data = _aux_input
+
+        target_node_idx = data.target_node_idx
+
+        h = self.transform(data)
+
+        target_embedding = h[target_node_idx]           
+
+        output = self.fc(target_embedding)                           
+
+        return output.view(-1, self.hidden_size)
+
+class ReceiverTransform(nn.Module):
+    def __init__(self, embedding_size, heads, hidden_size):
+        super(ReceiverTransform, self).__init__()
+        self.num_node_features = num_node_features
+        self.heads = heads
         
-        target_embedding = h[target_node_idx]                               # embedding size                
-        target_embedding = target_embedding.unsqueeze(0)                    # 1 x embedding_size
+        self.transform = Transform(self.num_node_features, embedding_size, heads)
+        self.fc = nn.Linear(hidden_size, (embedding_size * heads))
 
-        output = self.fc(target_embedding)                                  # 1 x hidden size
+    def forward(self, message, _input, _aux_input):
+        data = _aux_input
 
-        return output
+        h = self.transform(data)   
 
-class Receiver(nn.Module):
-    """
-    Receiver module that performs message passing and computes probabilities based on dot products.
-    """
+        message_embedding = self.fc(message)                 
 
-    def __init__(self, embedding_size, hidden_size):
-        super(Receiver, self).__init__()
-        self.num_node_features = 2
-        self.heads = 2
+        dot_products = torch.matmul(h, message_embedding.t()).t()   
 
-        self.conv1 = GATv2Conv(self.num_node_features, embedding_size, edge_dim=1, heads=self.heads, concat=True)
-        self.conv2 = GATv2Conv(-1, embedding_size, edge_dim=1, heads=self.heads, concat=True)
-        self.fc = nn.Linear(hidden_size, (embedding_size * self.heads))
-
-    def forward(self, message, data, _aux_input=None):
-        """
-        Forward pass of the Receiver module.
-
-        Args:
-            message (torch.Tensor): The input message.
-            data (torch_geometric.data.Data): The input data.
-            _aux_input (None, optional): Auxiliary input (not used).
-
-        Returns:
-            torch.Tensor: The computed probabilities.
-        """
-        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
-
-        h = self.conv1(x=x, edge_index=edge_index, edge_attr=edge_attr)     # nodes x embedding size
-        h = F.relu(h)
-
-        h = self.conv2(x=x, edge_index=edge_index, edge_attr=edge_attr)     # nodes x embedding size
-        h = F.relu(h)   
-
-        message = torch.cat([message, message], dim=0)
-
-        message_embedding = self.fc(message)                                # 1 x embedding size
-
-        dot_products = torch.matmul(h, message_embedding.t())               # nodes x 1
-
-        probabilities = F.softmax(dot_products, dim=0)                      # nodes x 1
+        probabilities = F.log_softmax(dot_products, dim=1)                      
 
         return probabilities

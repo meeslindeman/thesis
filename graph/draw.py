@@ -1,14 +1,21 @@
 import matplotlib.pyplot as plt
 import networkx as nx
-from build import create_family_tree, create_data_object
+from graph.build_test import create_family_tree, create_data_object
 
-def draw_graph(data, names):
+def draw_graph(data):
+    """
+    Draw a directed graph based on the given data.
+
+    Parameters:
+    data (object): The data object containing the necessary information for drawing the graph.
+    """
+
     # Create a new directed graph
     G = nx.DiGraph()
 
-    # Add nodes with the name and age attributes
-    for i, (name, attr) in enumerate(zip(names, data.x)):
-        G.add_node(i, name=name, age=int(attr[1]))
+    # Add nodes with only age attributes (since names are not used)
+    for i, attr in enumerate(data.x):
+        G.add_node(i, age=int(attr[1]), hair=int(attr[2]), height=int(attr[3]))
 
     # Add edges and edge labels based on the edge_index and edge_attr from PyG data
     edge_labels = {}
@@ -18,7 +25,7 @@ def draw_graph(data, names):
         edge_labels[(start.item(), end.item())] = 'married' if attr.item() == 0 else 'childOf'
 
     # Define node colors: 'blue' for male, 'red' for female
-    node_colors = ['tab:blue' if gender == 0 else 'tab:red' for gender, _ in data.x.tolist()]
+    node_colors = ['tab:blue' if gender == 0 else 'tab:red' for gender, _, _, _ in data.x.tolist()]
 
     # Position nodes using spring layout
     pos = nx.spring_layout(G)
@@ -32,15 +39,14 @@ def draw_graph(data, names):
     # Draw the edge labels
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=7)
 
-    # Draw the node labels with name and age
-    labels = {i: f"{names[i]}\n{int(data.x[i, 1])}" for i in range(len(names))}
+    # Draw the node labels with index and age
+    labels = {i: f"Index: {i}\nAge: {int(data.x[i, 1])}\nHair Color: {'brown' if data.x[i, 2] == 0 else 'blonde' if data.x[i, 2] == 1 else 'black'}\nHeight: {int(data.x[i, 3])} cm" for i in range(len(data.x))}
     nx.draw_networkx_labels(G, pos, labels, font_size=8)  # Adjust font size as needed
 
     # Show the plot
     plt.show()
 
 # Example usage:
-family_tree, names_list = create_family_tree(3)  # Generate 3 generations
+family_tree = create_family_tree(2)  # Generate 3 generations
 graph_data = create_data_object(family_tree)
-
-draw_graph(graph_data, names_list)
+# draw_graph(graph_data)

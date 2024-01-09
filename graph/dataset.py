@@ -2,7 +2,7 @@ import os
 import torch
 import random
 from torch_geometric.data import Dataset
-from graph.build import create_family_tree, create_data_object
+from graph.build_test import create_family_tree, create_data_object
 
 class FamilyGraphDataset(Dataset):
     """
@@ -34,23 +34,21 @@ class FamilyGraphDataset(Dataset):
         return self.data[idx]
     
     def generate_labels(self, num_nodes):
-        labels = torch.zeros(num_nodes, dtype=torch.long)
         target_node_idx = random.randint(0, num_nodes - 1)
-        labels[target_node_idx] = 1
-        return labels
+        return target_node_idx
     
     def process(self):
         if not os.path.isfile(self.processed_paths[0]):
             self.data = []
             for _ in range(self.number_of_graphs):
-                family_tree, _ = create_family_tree(self.generations)
+                family_tree = create_family_tree(self.generations)
                 graph_data = create_data_object(family_tree)
 
                 # Generate random labels for each node
-                labels = self.generate_labels(graph_data.num_nodes)
+                target_node_idx = self.generate_labels(graph_data.num_nodes)
 
                 # Store the labels as an attribute of the graph_data
-                graph_data.labels = labels
+                graph_data.target_node_idx = target_node_idx
 
                 self.data.append(graph_data)
 
