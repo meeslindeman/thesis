@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class Options:
     # Agents
-    embedding_size: int = 40 # Default: 50
+    embedding_size: int = 10 # Default: 50
     heads: int = 2 # Default: 1
     hidden_size: int = 20 # Default: 20
     sender_cell: str = 'gru' # 'rnn', 'gru', 'lstm'

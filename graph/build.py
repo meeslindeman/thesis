@@ -1,5 +1,4 @@
 import random
-import names
 import torch
 from torch_geometric.data import Data
 
@@ -13,6 +12,8 @@ class FamilyMember:
         self.age = age
         self.spouse = None
         self.children = []
+        self.height = random.randint(150, 200) # in cm
+        self.hair_color = random.choice(['black', 'brown', 'blonde', 'red'])
 
     def create_spouse(self):
         """
@@ -71,7 +72,8 @@ def create_family_tree(generations):
 def create_data_object(all_members):
     # Convert genders to a binary representation and collect node features
     gender_to_binary = {'m': 0, 'f': 1}
-    x = [[gender_to_binary[member.gender], member.age] for index, member in all_members.items()]
+    color_to_binary = {'black': 0, 'brown': 1, 'blonde': 2, 'red': 3}
+    x = [[gender_to_binary[member.gender], member.age, color_to_binary[member.hair_color], member.height] for index, member in all_members.items()]
 
     # Prepare edge_index and edge_attr
     edge_index = []

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import networkx as nx
-from graph.build_test import create_family_tree, create_data_object
+from graph.build import create_family_tree, create_data_object
 
 def draw_graph(data):
     """
@@ -47,6 +47,6 @@ def draw_graph(data):
     plt.show()
 
 # Example usage:
-family_tree = create_family_tree(2)  # Generate 3 generations
+family_tree = create_family_tree(3)  # Generate 3 generations
 graph_data = create_data_object(family_tree)
 # draw_graph(graph_data)

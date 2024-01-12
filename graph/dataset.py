@@ -2,7 +2,7 @@ import os
 import torch
 import random
 from torch_geometric.data import Dataset
-from graph.build_test import create_family_tree, create_data_object
+from graph.build import create_family_tree, create_data_object
 
 class FamilyGraphDataset(Dataset):
     """
@@ -37,6 +37,12 @@ class FamilyGraphDataset(Dataset):
         target_node_idx = random.randint(0, num_nodes - 1)
         return target_node_idx
     
+    def generate_root(self, num_nodes, target_node_idx):
+        node_indices = list(range(num_nodes))
+        node_indices.remove(target_node_idx)
+        root_idx = random.choice(node_indices)
+        return root_idx
+    
     def process(self):
         if not os.path.isfile(self.processed_paths[0]):
             self.data = []
@@ -49,6 +55,10 @@ class FamilyGraphDataset(Dataset):
 
                 # Store the labels as an attribute of the graph_data
                 graph_data.target_node_idx = target_node_idx
+
+                root_idx = self.generate_root(graph_data.num_nodes, target_node_idx)
+
+                graph_data.root_idx = root_idx
 
                 self.data.append(graph_data)
 

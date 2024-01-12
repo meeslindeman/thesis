@@ -21,3 +21,5 @@ class ResultsCollector(ConsoleLogger):
             output_message = ", ".join(sorted([f"{k}={v}" for k, v in dump.items()]))
             output_message = f"{mode}: epoch {epoch}, loss {loss}, " + output_message
             print(output_message)
+    
+    
