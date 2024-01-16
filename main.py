@@ -1,27 +1,28 @@
-# Import necessary modules
-from sklearn.model_selection import train_test_split
-from dataloader import DataLoader
-from game import get_game
-from train import perform_training
+import logging
+import coloredlogs
+import pandas as pd
 from options import Options
-from graph.dataset import FamilyGraphDataset
-from analysis.plot import plot_acc
+from run_series import run_experiment, run_series_experiments
+from analysis.plot import plot_experiment, plot_all_experiments
 
+logging.basicConfig(level=logging.INFO)
+coloredlogs.install(level='INFO')
 
-# Initialize options
-opts = Options()
+# For one experiment
+# results = run_experiment(Options, 'results')
+# plot_experiment(Options, results, mode='both', save=False)
 
-# Load dataset
-dataset = FamilyGraphDataset(root='/Users/meeslindeman/Library/Mobile Documents/com~apple~CloudDocs/Thesis/Code/data', number_of_graphs=100, generations=1)
+# For multiple experiments: adjust __str__ method in Options class !!!
+options_list = [Options(agents='dual', hidden_size=20),
+                Options(agents='transform', hidden_size=20),
+                Options(agents='dual', hidden_size=40),
+                Options(agents='transform', hidden_size=40),
+                Options(agents='dual', hidden_size=60),
+                Options(agents='transform', hidden_size=60),
+                Options(agents='gat', hidden_size=20),
+                Options(agents='gat', hidden_size=40),
+                Options(agents='gat', hidden_size=60)]
 
-train_data, val_data = train_test_split(dataset, test_size=0.2, random_state=42)
-train_loader = DataLoader(game_size=1, dataset=train_data, batch_size=opts.batch_size, shuffle=True)
-val_loader = DataLoader(game_size=1, dataset=val_data, batch_size=opts.batch_size, shuffle=True)
-
-# Get the game setup based on the options
-game = get_game(opts)
-
-# Perform training
-results, trainer = perform_training(opts, train_loader, val_loader, game)
-
-plot_acc(results, dataset[0].num_nodes)
+results, target_folder = run_series_experiments(options_list, 'results')
+target_folder = 'results'
+plot_all_experiments(target_folder, mode='both', save=True)

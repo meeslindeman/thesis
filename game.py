@@ -1,6 +1,6 @@
 import egg.core as core
 import torch.nn.functional as F
-from agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform
+from agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform, SenderRel, ReceiverRel
 from options import Options
 
 def get_game(opts: Options):
@@ -13,6 +13,9 @@ def get_game(opts: Options):
     elif opts.agents == "gat":
         sender = SenderGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
         receiver = ReceiverGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
+    elif opts.agents == "rel":
+        sender = SenderRel(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverRel(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
     else:
         print("Invalid agent type")
 

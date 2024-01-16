@@ -1,5 +1,7 @@
 import json
+import egg.core as core
 from egg.core.callbacks import ConsoleLogger
+from options import Options
 
 class ResultsCollector(ConsoleLogger):
     def __init__(self, results: list, print_to_console: bool, print_train_loss=True, as_json=True):
@@ -21,5 +23,30 @@ class ResultsCollector(ConsoleLogger):
             output_message = ", ".join(sorted([f"{k}={v}" for k, v in dump.items()]))
             output_message = f"{mode}: epoch {epoch}, loss {loss}, " + output_message
             print(output_message)
-    
-    
+
+def get_callbacks(opts):
+    callbacks = []
+    if opts.callbacks_config['early_stopper']:
+        callbacks.append(core.EarlyStopperAccuracy(opts.accuracy, validation=False))
+    if opts.callbacks_config['message_entropy']:
+        callbacks.append(core.MessageEntropy(print_train=True, is_gumbel=True))
+    if opts.callbacks_config['print_validation']:
+        callbacks.append(core.PrintValidationEvents(n_epochs=opts.n_epochs))
+    if opts.callbacks_config['topographic_similarity']:
+        callbacks.append(core.TopographicSimilarity(
+            sender_input_distance_fn="cosine", 
+            message_distance_fn="euclidean", 
+            compute_topsim_train_set=False, 
+            compute_topsim_test_set=True, 
+            is_gumbel=True
+        ))
+    if opts.callbacks_config['disent']:
+        callbacks.append(core.Disent(
+            is_gumbel=True, 
+            compute_posdis=True, 
+            compute_bosdis=False, 
+            vocab_size=opts.vocab_size,
+            print_test=True,
+            print_train=True
+        ))
+    return callbacks

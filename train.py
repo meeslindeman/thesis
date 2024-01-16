@@ -1,29 +1,28 @@
 import egg.core as core
-from egg.core import ConsoleLogger
+import torch 
 from options import Options
-from analysis.timer import timer
-from analysis.logger import ResultsCollector
+from analysis.logger import ResultsCollector, get_callbacks
 
 def perform_training(opts: Options, train_loader, val_loader, game):
     results = []
 
-    opts = core.init(params=['--random_seed=42', 
-                            '--lr=1e-3',  
-                            f'--batch_size={opts.batch_size}',
-                            f'--n_epochs={opts.n_epochs}',
-                            f'--vocab_size={opts.vocab_size}',
-                            '--optimizer=adam',
-                            '--update_freq=10'])
+    options = core.init(params=['--random_seed=42', 
+                        '--lr=1e-3',  
+                        f'--batch_size={opts.batch_size}',
+                        f'--n_epochs={opts.n_epochs}',
+                        f'--vocab_size={opts.vocab_size}',
+                        '--update_freq=10'])
 
-    optimizer = core.build_optimizer(game.parameters())
+    callbacks_list = get_callbacks(opts)
+    callbacks = [ResultsCollector(results, print_to_console=True)]
+    callbacks.extend(callbacks_list)
 
     trainer = core.Trainer(
         game=game, 
-        optimizer=optimizer, 
+        optimizer=torch.optim.Adam(game.parameters()), 
         train_data=train_loader,
         validation_data=val_loader, 
-        # callbacks=[core.ConsoleLogger(as_json=True, print_train_loss=True)]
-        callbacks=[ResultsCollector(results, print_to_console=True)]
+        callbacks=callbacks
     )
 
     trainer.train(n_epochs=opts.n_epochs)

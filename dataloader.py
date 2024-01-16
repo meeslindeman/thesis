@@ -1,4 +1,5 @@
 from typing import Any, List, Optional, Sequence, Union
+from sklearn.model_selection import train_test_split
 
 import torch.utils.data
 from torch_geometric.data import Batch, Dataset
@@ -9,7 +10,7 @@ from torch_geometric.data.on_disk_dataset import OnDiskDataset
 class Collater:
     def __init__(
         self,
-        game_size: int,  # the number of graphs for a game
+        game_size: int,  
         dataset: Union[Dataset, Sequence[BaseData], DatasetAdapter],
         follow_batch: Optional[List[str]] = None,
         exclude_keys: Optional[List[str]] = None,
@@ -76,3 +77,9 @@ class DataLoader(torch.utils.data.DataLoader):
             collate_fn=self.collator.collate_fn,
             **kwargs,
         )
+
+def get_loaders(dataset):
+    train_data, val_data = train_test_split(dataset, test_size=0.2, random_state=7)
+    train_loader = DataLoader(game_size=1, dataset=train_data, batch_size=1, shuffle=True)
+    val_loader = DataLoader(game_size=1, dataset=val_data, batch_size=1, shuffle=True)
+    return train_loader, val_loader
