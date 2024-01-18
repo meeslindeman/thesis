@@ -13,5 +13,9 @@ def results_to_dataframe(results: str, n_nodes, opts: Options, target_folder: st
     results['embedding_size'] = int(opts.embedding_size)
     results['max_len'] = int(opts.max_len)
     results['sender_cell'] = str(opts.sender_cell)
+    results['agent'] = str(opts.agents)
     save and results.to_csv(f'{target_folder}/single_dataframe.csv')
     return results
+
+def get_final_accuracies():
+    return None

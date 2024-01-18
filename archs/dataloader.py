@@ -29,13 +29,12 @@ class Collater:
                 follow_batch=self.follow_batch,
                 exclude_keys=self.exclude_keys,
             )
-            # we return a tuple (sender_input, labels, receiver_input, aux_input)
-            # we use aux_input to store minibatch of graphs
+            # return a tuple (sender_input, labels, receiver_input, aux_input)
             return (
-                torch.zeros(len(batch) // self.game_size, 1),  # we don't need sender_input --> create a fake one
-                batch.target_node_idx,  # the target is aways the first graph among game_size graphs
-                None,  # we don't care about receiver_input
-                batch  # this is a compact data for batch_size graphs 
+                batch.x[batch.target_node_idx], # sender input -> node features of target node
+                batch.target_node_idx, # target node idx
+                None,  # receiver input
+                batch  # aux input -> minibatch of graph
             )
 
         raise TypeError(f"DataLoader found invalid type: '{type(elem)}'")

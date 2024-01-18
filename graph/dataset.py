@@ -16,7 +16,7 @@ class FamilyGraphDataset(Dataset):
     Returns:
         Data(x=[8, 2], edge_index=[2, 20], edge_attr=[20], labels=[8])
     """
-    def __init__(self, root, number_of_graphs, generations, transform=None, pre_transform=None):
+    def __init__(self, root, number_of_graphs=100, generations=1, transform=None, pre_transform=None):
         self.number_of_graphs = number_of_graphs
         self.generations = generations
         super(FamilyGraphDataset, self).__init__(root, transform, pre_transform)

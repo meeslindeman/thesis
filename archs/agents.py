@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from network import GAT, Transform
+from archs.network import GAT, Transform
 
 num_node_features = 4
 

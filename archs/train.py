@@ -6,16 +6,15 @@ from analysis.logger import ResultsCollector, get_callbacks
 def perform_training(opts: Options, train_loader, val_loader, game):
     results = []
 
-    options = core.init(params=['--random_seed=42', 
-                        '--lr=1e-3',  
-                        f'--batch_size={opts.batch_size}',
-                        f'--n_epochs={opts.n_epochs}',
-                        f'--vocab_size={opts.vocab_size}',
-                        '--update_freq=10'])
+    core.init(params=['--random_seed=42',
+                      '--lr=1e-3',
+                      f'--batch_size={opts.batch_size}',
+                      f'--n_epochs={opts.n_epochs}',
+                      f'--vocab_size={opts.vocab_size}',
+                      '--update_freq=10'])
 
     callbacks_list = get_callbacks(opts)
-    callbacks = [ResultsCollector(results, print_to_console=True)]
-    callbacks.extend(callbacks_list)
+    callbacks = [ResultsCollector(results, print_to_console=True, callbacks_list=callbacks_list)] 
 
     trainer = core.Trainer(
         game=game, 

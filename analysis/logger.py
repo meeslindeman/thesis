@@ -1,18 +1,24 @@
 import json
 import egg.core as core
-from egg.core.callbacks import ConsoleLogger
 from options import Options
 
-class ResultsCollector(ConsoleLogger):
-    def __init__(self, results: list, print_to_console: bool, print_train_loss=True, as_json=True):
+class ResultsCollector(core.ConsoleLogger):
+    def __init__(self, results: list, print_to_console: bool, print_train_loss=True, as_json=True, callbacks_list=None):
         super().__init__(as_json=as_json, print_train_loss=print_train_loss)
         self.results = results
         self.print_to_console = print_to_console
+        self.callbacks_list = callbacks_list
 
-    # adapted from egg.core.callbacks.ConsoleLogger
     def aggregate_print(self, loss: float, logs, mode: str, epoch: int):
         dump = dict(loss=loss)
         aggregated_metrics = dict((k, v.mean().item()) for k, v in logs.aux.items())
+
+        if self.callbacks_list:
+            for callback in self.callbacks_list:
+                if isinstance(callback, core.TopographicSimilarity):
+                    topsim = callback.print_message(logs, mode, epoch)
+                    dump.update(dict(topsim=topsim))
+
         dump.update(aggregated_metrics)
         dump.update(dict(mode=mode, epoch=epoch))
 
@@ -34,7 +40,7 @@ def get_callbacks(opts):
         callbacks.append(core.PrintValidationEvents(n_epochs=opts.n_epochs))
     if opts.callbacks_config['topographic_similarity']:
         callbacks.append(core.TopographicSimilarity(
-            sender_input_distance_fn="cosine", 
+            sender_input_distance_fn="hamming", 
             message_distance_fn="euclidean", 
             compute_topsim_train_set=False, 
             compute_topsim_test_set=True, 

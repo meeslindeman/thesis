@@ -1,4 +1,5 @@
 import os
+import re
 from options import Options
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -36,8 +37,8 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
                         cols=cols, 
                         shared_xaxes=True,
                         shared_yaxes=True,
-                        column_titles=option_a,
-                        row_titles=[f"Hidden size: {b}" for b in option_b], # Modify to option set
+                        column_titles=[f"Vocab size: {a}" for a in option_a],
+                        row_titles=[f"Max Len: {b}" for b in option_b], # Modify to option set
                         horizontal_spacing=0.01, 
                         vertical_spacing=0.02,
                         x_title="Epochs",
@@ -69,11 +70,11 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
 
     # Update layout
     fig.update_layout(legend=dict(
-                          orientation="h",
-                          xanchor="left",
-                          yanchor="bottom",
-                          x=0,
-                          y=1),
+                        orientation="h",
+                        xanchor="left",
+                        yanchor="bottom",
+                        x=0,
+                        y=1),
                       height=400 * rows,
                       width=800 * cols)
     
@@ -91,18 +92,21 @@ def plot_experiment(opts: Options, df: pd.DataFrame, mode='both', save=True):
     colors = ["#FFA500", "#6495ED"]
     size = df["game_size"].iloc[0]
 
-    if mode == 'train':
-        df = df[df['mode'] == 'train']
-    elif mode == 'test':
-        df = df[df['mode'] == 'test']
+    if mode != 'both':
+        df = df[df['mode'] == mode]
 
-    fig = px.line(df, x='epoch', y='acc', color='mode', 
-                  color_discrete_sequence=colors, title=f'Accuracy per epochs (n={size})')
+    fig = px.line(df, x='epoch', y='acc', color='mode', color_discrete_sequence=colors)
     
     fig.update_traces(mode='markers+lines', marker=dict(size=4, line=dict(width=1)), line=dict(width=4))
 
     # Add a grey dotted line for chance level
     fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", annotation_text="Chance Level")
+
+    fig.update_xaxes(title_text='Epoch')  # Update x-axis title
+    fig.update_yaxes(title_text='Accuracy')  # Update y-axis title
+
+    # Customizing the legend title
+    fig.update_layout(legend_title_text='Mode')
 
     if save:
         # pip3 install kaleido

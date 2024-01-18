@@ -1,6 +1,6 @@
 import egg.core as core
 import torch.nn.functional as F
-from agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform, SenderRel, ReceiverRel
+from archs.agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform, SenderRel, ReceiverRel
 from options import Options
 
 def get_game(opts: Options):
