@@ -26,8 +26,8 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
 
     # Extract options from filename
     option_a = sorted(set(f.split('_')[0] for f in filenames))
-    option_b = sorted(set(f.split('_')[1].split('.')[0] for f in filenames))
-
+    option_b = sorted(set(f.split('_')[1].split('.')[0] for f in filenames), key=int)
+    
     # Set the number of rows and columns
     rows = len(option_b)
     cols = len(option_a)
@@ -37,8 +37,8 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
                         cols=cols, 
                         shared_xaxes=True,
                         shared_yaxes=True,
-                        column_titles=[f"Vocab size: {a}" for a in option_a],
-                        row_titles=[f"Max Len: {b}" for b in option_b], # Modify to option set
+                        column_titles=[f"Agent: {a}" for a in option_a], # modify to option set
+                        row_titles=[f"Generations: {b}" for b in option_b], # modify to option set
                         horizontal_spacing=0.01, 
                         vertical_spacing=0.02,
                         x_title="Epochs",
@@ -68,6 +68,12 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
             fig.add_trace(trace, row=row, col=col)
         fig.update_traces(mode='markers+lines', marker=dict(size=4, line=dict(width=1)), line=dict(width=4))
 
+        # last_point = sub_df.iloc[-1]
+        # fig.add_annotation(x=last_point['epoch'], y=last_point['acc'], text=f"{last_point['acc']:.2f}", showarrow=False, font=dict(color='black'), row=row, col=col, xshift=50)
+
+        size = df["game_size"].iloc[0]
+        fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", row=row, col=col, annotation_text="Chance Level")
+
     # Update layout
     fig.update_layout(legend=dict(
                         orientation="h",
@@ -78,13 +84,16 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
                       height=400 * rows,
                       width=800 * cols)
     
-    size = df["game_size"].iloc[0]
-    for idx in range(len(dfs)):
-        row, col = (idx // cols) + 1, (idx % cols) + 1
-        fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", row=row, col=col, annotation_text="Chance Level")
+    fig.update_yaxes(range=[0, 1.0])
+    
+    # size = df["game_size"].iloc[0]
+    # for idx in range(len(dfs)):
+    #     row, col = (idx // cols) + 1, (idx % cols) + 1
+    #     fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", row=row, col=col, annotation_text="Chance Level")
 
     if save:
-        fig.write_image(f"plots/combined_accuracy_plots.png") # Modify to option set
+        # pip3 install kaleido
+        fig.write_image(f"plots/combined_accuracy_plots.png") 
     else:
         fig.show()
 
@@ -102,14 +111,14 @@ def plot_experiment(opts: Options, df: pd.DataFrame, mode='both', save=True):
     # Add a grey dotted line for chance level
     fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", annotation_text="Chance Level")
 
-    fig.update_xaxes(title_text='Epoch')  # Update x-axis title
-    fig.update_yaxes(title_text='Accuracy')  # Update y-axis title
+    fig.update_xaxes(title_text='Epoch') 
+    fig.update_yaxes(title_text='Accuracy') 
 
     # Customizing the legend title
     fig.update_layout(legend_title_text='Mode')
 
     if save:
         # pip3 install kaleido
-        fig.write_image(f"plots/{opts.agents}.png")
+        fig.write_image(f"plots/single_accuracy_plot.png")
     else:
         fig.show()

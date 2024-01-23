@@ -17,5 +17,5 @@ def generate_datasets(number_of_graphs, generations):
 
         # Instantiate the dataset
         dataset = FamilyGraphDataset(root=directory, number_of_graphs=number_of_graphs, generations=g)
-
-# generate_datasets(100, [1, 2, 3, 4])
+        print(f"Number of graphs: {len(dataset)}")
+        print(f"Number of nodes: {dataset[0].num_nodes}")

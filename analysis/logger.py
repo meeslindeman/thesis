@@ -16,7 +16,7 @@ class ResultsCollector(core.ConsoleLogger):
         if self.callbacks_list:
             for callback in self.callbacks_list:
                 if isinstance(callback, core.TopographicSimilarity):
-                    topsim = callback.print_message(logs, mode, epoch)
+                    topsim = callback.print_message(logs, mode, epoch) # Did a little hacking in the core library to make this work
                     dump.update(dict(topsim=topsim))
 
         dump.update(aggregated_metrics)
@@ -40,8 +40,8 @@ def get_callbacks(opts):
         callbacks.append(core.PrintValidationEvents(n_epochs=opts.n_epochs))
     if opts.callbacks_config['topographic_similarity']:
         callbacks.append(core.TopographicSimilarity(
-            sender_input_distance_fn="hamming", 
-            message_distance_fn="euclidean", 
+            sender_input_distance_fn="cosine", 
+            message_distance_fn="hamming", 
             compute_topsim_train_set=False, 
             compute_topsim_test_set=True, 
             is_gumbel=True

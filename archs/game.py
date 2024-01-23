@@ -3,19 +3,19 @@ import torch.nn.functional as F
 from archs.agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform, SenderRel, ReceiverRel
 from options import Options
 
-def get_game(opts: Options):
+def get_game(opts: Options, num_node_features: int):
     if opts.agents == "dual":
-        sender = SenderDual(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
-        receiver = ReceiverDual(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
+        sender = SenderDual(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverDual(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
     elif opts.agents == "transform":
-        sender = SenderTransform(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
-        receiver = ReceiverTransform(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
+        sender = SenderTransform(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverTransform(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
     elif opts.agents == "gat":
-        sender = SenderGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
-        receiver = ReceiverGAT(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
+        sender = SenderGAT(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverGAT(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
     elif opts.agents == "rel":
-        sender = SenderRel(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
-        receiver = ReceiverRel(embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
+        sender = SenderRel(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
+        receiver = ReceiverRel(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
     else:
         print("Invalid agent type")
 

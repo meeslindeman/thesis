@@ -1,5 +1,6 @@
 from typing import Any, List, Optional, Sequence, Union
 from sklearn.model_selection import train_test_split
+from options import Options
 
 import torch.utils.data
 from torch_geometric.data import Batch, Dataset
@@ -31,7 +32,7 @@ class Collater:
             )
             # return a tuple (sender_input, labels, receiver_input, aux_input)
             return (
-                batch.x[batch.target_node_idx], # sender input -> node features of target node
+                batch.x.view(1, -1), # sender input -> node features of target node
                 batch.target_node_idx, # target node idx
                 None,  # receiver input
                 batch  # aux input -> minibatch of graph
@@ -77,8 +78,8 @@ class DataLoader(torch.utils.data.DataLoader):
             **kwargs,
         )
 
-def get_loaders(dataset):
-    train_data, val_data = train_test_split(dataset, test_size=0.2, random_state=7)
-    train_loader = DataLoader(game_size=1, dataset=train_data, batch_size=1, shuffle=True)
-    val_loader = DataLoader(game_size=1, dataset=val_data, batch_size=1, shuffle=True)
+def get_loaders(opts: Options(), dataset):
+    train_data, val_data = train_test_split(dataset, test_size=0.2, random_state=42)
+    train_loader = DataLoader(game_size=1, dataset=train_data, batch_size=opts.batch_size, shuffle=True)
+    val_loader = DataLoader(game_size=1, dataset=val_data, batch_size=opts.batch_size, shuffle=True)
     return train_loader, val_loader

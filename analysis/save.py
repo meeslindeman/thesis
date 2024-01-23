@@ -11,6 +11,7 @@ def results_to_dataframe(results: str, n_nodes, opts: Options, target_folder: st
     results['hidden_size'] = int(opts.hidden_size)
     results['n_epochs'] = int(opts.n_epochs)
     results['embedding_size'] = int(opts.embedding_size)
+    results['heads'] = int(opts.heads)
     results['max_len'] = int(opts.max_len)
     results['sender_cell'] = str(opts.sender_cell)
     results['agent'] = str(opts.agents)

@@ -12,8 +12,8 @@ def run_experiment(opts: Options, target_folder: str, save: bool = True):
 
     dataset = FamilyGraphDataset(root=f'data/gens={opts.generations}')
 
-    train_loader, valid_loader = get_loaders(dataset)
-    game = get_game(opts)
+    train_loader, valid_loader = get_loaders(opts, dataset)
+    game = get_game(opts, dataset.num_node_features)
     results, trainer = perform_training(opts, train_loader, valid_loader, game)
 
     return results_to_dataframe(results, dataset[0].num_nodes, opts, target_folder, save=save)

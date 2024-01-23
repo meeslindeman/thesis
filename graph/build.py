@@ -12,8 +12,8 @@ class FamilyMember:
         self.age = age
         self.spouse = None
         self.children = []
-        self.height = random.randint(150, 200) # in cm
-        self.hair_color = random.choice(['black', 'brown', 'blonde', 'red'])
+        # self.height = random.randint(150, 200) # in cm
+        # self.hair_color = random.choice(['black', 'brown', 'blonde', 'red'])
 
     def create_spouse(self):
         """
@@ -73,7 +73,7 @@ def create_data_object(all_members):
     # Convert genders to a binary representation and collect node features
     gender_to_binary = {'m': 0, 'f': 1}
     color_to_binary = {'black': 0, 'brown': 1, 'blonde': 2, 'red': 3}
-    x = [[gender_to_binary[member.gender], member.age, color_to_binary[member.hair_color], member.height] for index, member in all_members.items()]
+    x = [[gender_to_binary[member.gender], member.age] for index, member in all_members.items()] #color_to_binary[member.hair_color], member.height
 
     # Prepare edge_index and edge_attr
     edge_index = []
@@ -84,19 +84,20 @@ def create_data_object(all_members):
             spouse_index = list(all_members.keys())[list(all_members.values()).index(member.spouse)]
             # Add edges for spouses in both directions with the 'married' attribute
             edge_index.append([index, spouse_index])
-            edge_index.append([spouse_index, index])
-            edge_attr.extend([0, 0])  # 0 for 'married'
+            edge_attr.append([1, 0, 0]) 
 
         for child in member.children:
             child_index = list(all_members.keys())[list(all_members.values()).index(child)]
             # Add edges from children to this member with the 'childOf' attribute
             edge_index.append([child_index, index])
-            edge_attr.append(1)  # 1 for 'childOf'
+            edge_attr.append([0, 1, 0]) 
+            edge_index.append([index, child_index])
+            edge_attr.append([0, 0, 1]) 
 
     # Convert to PyTorch tensors
-    x = torch.tensor(x, dtype=torch.float)
+    x = torch.tensor(x, dtype=torch.float32)
     edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
-    edge_attr = torch.tensor(edge_attr, dtype=torch.float)
+    edge_attr = torch.tensor(edge_attr, dtype=torch.float32)
 
     # Create the data object
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
