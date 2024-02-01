@@ -25,8 +25,8 @@ def run_series_experiments(opts: [Options], target_folder: str):
         result = run_experiment(opts, target_folder, False)
 
         filename = f"{str(opts)}.csv"
-        result.to_csv(os.path.join(target_folder, filename), index=False)
-
-        # logging.info(f"Experiment with options {str(opts)} completed.")
+        if not os.path.exists(f'{target_folder}/rnd_seed={opts.random_seed}'):
+            os.makedirs(f'{target_folder}/rnd_seed={opts.random_seed}')
+        result.to_csv(os.path.join(f'{target_folder}/rnd_seed={opts.random_seed}', filename), index=False)
         
     return results, target_folder

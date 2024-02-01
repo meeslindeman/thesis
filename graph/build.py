@@ -6,14 +6,11 @@ class FamilyMember:
     """
     Represents a family member with gender, age, spouse, and children.
     """
-
     def __init__(self, gender, age):
         self.gender = gender
         self.age = age
         self.spouse = None
         self.children = []
-        # self.height = random.randint(150, 200) # in cm
-        # self.hair_color = random.choice(['black', 'brown', 'blonde', 'red'])
 
     def create_spouse(self):
         """
@@ -21,7 +18,7 @@ class FamilyMember:
         Returns the created spouse.
         """
         spouse_gender = 'f' if self.gender == 'm' else 'm'
-        spouse_age = random.randint(max(18, self.age - 5), min(self.age + 5, 100))
+        spouse_age = random.randint(max(17, self.age - 5), min(self.age + 5, 100))
         spouse = FamilyMember(spouse_gender, spouse_age)
         self.spouse = spouse
         spouse.spouse = self
@@ -88,9 +85,10 @@ def create_data_object(all_members):
 
         for child in member.children:
             child_index = list(all_members.keys())[list(all_members.values()).index(child)]
-            # Add edges from children to this member with the 'childOf' attribute
+            # Add edges from children to this member with the 'child-of' attribute
             edge_index.append([child_index, index])
             edge_attr.append([0, 1, 0]) 
+            # Add edges from this member to children with the 'gave-birth-to' attribute
             edge_index.append([index, child_index])
             edge_attr.append([0, 0, 1]) 
 

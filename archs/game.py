@@ -13,9 +13,6 @@ def get_game(opts: Options, num_node_features: int):
     elif opts.agents == "gat":
         sender = SenderGAT(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
         receiver = ReceiverGAT(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size) 
-    elif opts.agents == "rel":
-        sender = SenderRel(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
-        receiver = ReceiverRel(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)
     else:
         print("Invalid agent type")
 

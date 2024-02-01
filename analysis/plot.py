@@ -9,11 +9,13 @@ import pandas as pd
 def load_dataframes_from_folder(folder_path: str) -> list:
     dataframes = []
     filenames = []
+
     for file in os.listdir(folder_path):
         if file.endswith('.csv'):
             df = pd.read_csv(os.path.join(folder_path, file))
             dataframes.append(df)
             filenames.append(file)
+
     return dataframes, filenames
 
 def plot_all_experiments(folder_path: str, mode='both', save=False):
@@ -41,7 +43,7 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
                         row_titles=[f"Generations: {b}" for b in option_b], # modify to option set
                         horizontal_spacing=0.01, 
                         vertical_spacing=0.02,
-                        x_title="Epochs",
+                        x_title="Epoch",
                         y_title="Accuracy")
 
     for df, filename in zip(dfs, filenames):
@@ -68,9 +70,7 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
             fig.add_trace(trace, row=row, col=col)
         fig.update_traces(mode='markers+lines', marker=dict(size=4, line=dict(width=1)), line=dict(width=4))
 
-        # last_point = sub_df.iloc[-1]
-        # fig.add_annotation(x=last_point['epoch'], y=last_point['acc'], text=f"{last_point['acc']:.2f}", showarrow=False, font=dict(color='black'), row=row, col=col, xshift=50)
-
+        # Add a grey dotted line for chance level
         size = df["game_size"].iloc[0]
         fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", row=row, col=col, annotation_text="Chance Level")
 
@@ -85,15 +85,10 @@ def plot_all_experiments(folder_path: str, mode='both', save=False):
                       width=800 * cols)
     
     fig.update_yaxes(range=[0, 1.0])
-    
-    # size = df["game_size"].iloc[0]
-    # for idx in range(len(dfs)):
-    #     row, col = (idx // cols) + 1, (idx % cols) + 1
-    #     fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", row=row, col=col, annotation_text="Chance Level")
 
     if save:
         # pip3 install kaleido
-        fig.write_image(f"plots/combined_accuracy_plots.png") 
+        fig.write_image("plots/accuracies.png") 
     else:
         fig.show()
 
@@ -111,14 +106,12 @@ def plot_experiment(opts: Options, df: pd.DataFrame, mode='both', save=True):
     # Add a grey dotted line for chance level
     fig.add_hline(y=(1/size), line_dash="dash", line_color="grey", annotation_text="Chance Level")
 
-    fig.update_xaxes(title_text='Epoch') 
-    fig.update_yaxes(title_text='Accuracy') 
-
     # Customizing the legend title
     fig.update_layout(legend_title_text='Mode')
 
     if save:
         # pip3 install kaleido
-        fig.write_image(f"plots/single_accuracy_plot.png")
+        fig.write_image(f"plots/single_accuracy_plot.png", scale=3)
     else:
         fig.show()
+

@@ -32,7 +32,7 @@ class Collater:
             )
             # return a tuple (sender_input, labels, receiver_input, aux_input)
             return (
-                batch.x.view(1, -1), # sender input -> node features of target node
+                batch.sequence, # sender input -> node features of target node
                 batch.target_node_idx, # target node idx
                 None,  # receiver input
                 batch  # aux input -> minibatch of graph

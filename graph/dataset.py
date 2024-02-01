@@ -3,6 +3,7 @@ import torch
 import random
 from torch_geometric.data import Dataset
 from graph.build import create_family_tree, create_data_object
+from graph.sequence import process_graph_to_sequence
 
 class FamilyGraphDataset(Dataset):
     """
@@ -16,9 +17,10 @@ class FamilyGraphDataset(Dataset):
     Returns:
         Data(x=[8, 2], edge_index=[2, 20], edge_attr=[20], labels=[8])
     """
-    def __init__(self, root, number_of_graphs=100, generations=1, transform=None, pre_transform=None):
+    def __init__(self, root, number_of_graphs=100, generations=1, padding_len=9, transform=None, pre_transform=None):
         self.number_of_graphs = number_of_graphs
         self.generations = generations
+        self.padding_len = padding_len
         super(FamilyGraphDataset, self).__init__(root, transform, pre_transform)
         self.data = None
         self.process()
@@ -52,13 +54,14 @@ class FamilyGraphDataset(Dataset):
 
                 # Generate random labels for each node
                 target_node_idx = self.generate_labels(graph_data.num_nodes)
-
-                # Store the labels as an attribute of the graph_data
                 graph_data.target_node_idx = target_node_idx
 
                 root_idx = self.generate_root(graph_data.num_nodes, target_node_idx)
-
                 graph_data.root_idx = root_idx
+
+                # Process graph to sequence
+                sequence = process_graph_to_sequence(graph_data, self.padding_len)
+                graph_data.sequence = sequence
 
                 self.data.append(graph_data)
 

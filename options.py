@@ -11,24 +11,16 @@ class Options:
     gs_tau: float = 1.0 # default: 1.0
 
     # Training
-    n_epochs: int = 40
-    agents: str = 'dual' # 'dual', 'transform', 'gat', 'rel
+    n_epochs: int = 300
+    agents: str = 'dual' # 'dual', 'transform', 'gat'
     vocab_size: int = 100 # default: 100
-    batch_size: int = 50
+    batch_size: int = 32
     accuracy: float = 1.0 # set desired stopping accuracy
+    topsim: bool = True
+    random_seed: int = 42
 
-    # Dataset
-    generations: int = 2
-
-    # Configuration for callbacks -> see logger.py for additional options
-    # Only topographic_similarity is implemented
-    callbacks_config = {
-        'early_stopper': False,
-        'message_entropy': False,
-        'print_validation': False,
-        'topographic_similarity': False,
-        'disent': False
-    }
+    # Generations to be used (dataset graph size)
+    generations: int = 3
 
     # Set this according to parameters in main.py
     def __str__(self):
