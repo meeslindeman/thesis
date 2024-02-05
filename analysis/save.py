@@ -3,6 +3,20 @@ import pandas as pd
 from options import Options
 
 def results_to_dataframe(results: list[dict], n_nodes, opts: Options, target_folder: str, save: bool = True) -> pd.DataFrame:
+    """
+    Converts a list of results into a pandas DataFrame and adds additional columns from options.
+    
+    Args:
+        results (list[dict]): A list of dictionaries representing the results.
+        n_nodes: The number of nodes.
+        opts (Options): An instance of the Options class.
+        target_folder (str): The target folder to save the DataFrame.
+        save (bool, optional): Whether to save the DataFrame to a CSV file. Defaults to True.
+    
+    Returns:
+        pd.DataFrame: The resulting DataFrame.
+    """
+
     for result in results:
         if 'messages' in result:
             result['messages'] = str(result['messages'])

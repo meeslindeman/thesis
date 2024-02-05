@@ -1,9 +1,20 @@
 import egg.core as core
 import torch.nn.functional as F
-from archs.agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform, SenderRel, ReceiverRel
+from archs.agents import SenderDual, ReceiverDual, SenderGAT, ReceiverGAT, SenderTransform, ReceiverTransform
 from options import Options
 
 def get_game(opts: Options, num_node_features: int):
+    """
+    Returns a game object based on the given options and number of node features.
+    
+    Args:
+        opts (Options): The options for the game.
+        num_node_features (int): The number of features for each node.
+    
+    Returns:
+        game (SenderReceiverRnnGS): The game object.
+    """
+    
     if opts.agents == "dual":
         sender = SenderDual(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size, temperature=opts.gs_tau) 
         receiver = ReceiverDual(num_node_features=num_node_features, embedding_size=opts.embedding_size, heads=opts.heads, hidden_size=opts.hidden_size)

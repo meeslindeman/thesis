@@ -3,6 +3,15 @@ import networkx as nx
 from dataset import FamilyGraphDataset
 
 def draw_graph(data):
+    """
+    Draw a graph based on the given data.
+
+    Parameters:
+        data (object): The data object containing the necessary information for drawing the graph.
+
+    Returns:
+        None
+    """
     G = nx.DiGraph()
 
     # Add nodes with age attributes
@@ -46,11 +55,3 @@ def draw_graph(data):
     nx.draw_networkx_labels(G, pos, labels, font_size=8)
 
     plt.show()
-
-
-datasetx = FamilyGraphDataset(root=f'data/gens={2}')
-datasety = FamilyGraphDataset(root=f'data/gens={3}')
-
-graph_2 = datasetx[3]
-graph_3 = datasety[0]
-draw_graph(graph_2)

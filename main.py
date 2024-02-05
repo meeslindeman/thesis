@@ -16,7 +16,7 @@ def run_experiments(options_input):
         plot_experiment(options_input, results, mode='both', save=False)
     elif isinstance(options_input, list):
         results, target_folder = run_series_experiments(options_input, 'results')
-        plot_all_experiments(target_folder, mode='both', save=True)
+        plot_all_experiments(target_folder, mode='both', save=False)
     else:
         raise ValueError("Invalid input for options_input")
 

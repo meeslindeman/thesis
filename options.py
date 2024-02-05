@@ -2,6 +2,9 @@ from dataclasses import dataclass
 
 @dataclass
 class Options:
+    """
+    Class representing the options for the experiment.
+    """
     # Agents
     embedding_size: int = 10 # default: 10
     heads: int = 4 # default: 4
@@ -11,7 +14,7 @@ class Options:
     gs_tau: float = 1.0 # default: 1.0
 
     # Training
-    n_epochs: int = 300
+    n_epochs: int = 2
     agents: str = 'dual' # 'dual', 'transform', 'gat'
     vocab_size: int = 100 # default: 100
     batch_size: int = 32

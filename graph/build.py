@@ -40,6 +40,15 @@ class FamilyMember:
             self.spouse.children.append(child)
 
 def create_family_tree(generations):
+    """
+    Creates a family tree with the specified number of generations.
+
+    Args:
+        generations (int): The number of generations in the family tree.
+
+    Returns:
+        dict: A dictionary containing all the family members, where the keys are the member indices and the values are the FamilyMember objects.
+    """
     age_range = (80,100)
     root_age = random.randint(*age_range)
     root_member = FamilyMember('m', root_age)
@@ -66,12 +75,21 @@ def create_family_tree(generations):
 
     return all_members
 
+
 def create_data_object(all_members):
+    """
+    Creates a PyTorch Geometric data object from a dictionary of members.
+
+    Args:
+        all_members (dict): A dictionary containing information about all members.
+
+    Returns:
+        data (Data): A PyTorch Geometric data object containing node features, edge indices, and edge attributes.
+    """
+    
     # Convert genders to a binary representation and collect node features
     gender_to_binary = {'m': 0, 'f': 1}
-    color_to_binary = {'black': 0, 'brown': 1, 'blonde': 2, 'red': 3}
-    x = [[gender_to_binary[member.gender], member.age] for index, member in all_members.items()] #color_to_binary[member.hair_color], member.height
-
+    x = [[gender_to_binary[member.gender], member.age] for index, member in all_members.items()] 
     # Prepare edge_index and edge_attr
     edge_index = []
     edge_attr = []

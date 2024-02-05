@@ -21,6 +21,7 @@ def plot_message_histogram(base_folder, mode='both', cap=50, save=False):
     df = df.dropna(subset=['messages'])
 
     df = df[df['game_size'] != 10]
+    # df = df[df['epoch'] == 300]
 
     # Filter based on the mode
     if mode in ['train', 'test']:
@@ -32,7 +33,7 @@ def plot_message_histogram(base_folder, mode='both', cap=50, save=False):
     fig = make_subplots(rows=1,
                         cols=len(game_sizes), 
                         subplot_titles=[f"Game Size: {x}" for x in sorted(game_sizes)],
-                        x_title='Message Sequence',
+                        x_title='Message',
                         shared_yaxes=True,
                         horizontal_spacing=0.02)
 
@@ -61,12 +62,15 @@ def plot_message_histogram(base_folder, mode='both', cap=50, save=False):
             row=1, col=i
         )
 
-    fig.update_layout(height=600, width=1000 * len(game_sizes),
-                      yaxis_title='Message Frequency')
+    fig.update_layout(height=600, 
+                      width=1000 * len(game_sizes),
+                      yaxis_title='Message Frequency',
+                      showlegend=False)
+    fig.update_xaxes(tickangle=90)
     
     if save:
         fig.write_image(f"plots/message_histogram.png", scale=3)
     else:
         fig.show()
 
-plot_message_histogram("results/maxlen=5/rnd_seed=7", mode="test", cap=5, save=True)
+plot_message_histogram("results/maxlen=4/rnd_seed=0", mode="test", cap=10, save=True)

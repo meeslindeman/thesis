@@ -2,8 +2,21 @@ from graph.dataset import FamilyGraphDataset
 import os
 
 def generate_datasets(number_of_graphs, generations):
+    """
+    Generate datasets for family graphs.
+
+    Args:
+        number_of_graphs (int): The number of graphs to generate.
+        generations (list): A list of tuples representing the generations to generate the datasets for.
+            Each tuple should contain two elements: the number of generations and the padding length.
+
+    Returns:
+        None
+    """
     # Define the root directory
     root = 'data'
+
+    print(number_of_graphs)
 
     for g in generations:
         # Generate folder name based on parameters

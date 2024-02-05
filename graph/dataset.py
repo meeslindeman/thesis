@@ -15,9 +15,9 @@ class FamilyGraphDataset(Dataset):
         generations (int): Number of generations in each family tree.
 
     Returns:
-        Data(x=[8, 2], edge_index=[2, 20], edge_attr=[20], labels=[8])
+        Data object containing the family graph data.
     """
-    def __init__(self, root, number_of_graphs=100, generations=1, padding_len=9, transform=None, pre_transform=None):
+    def __init__(self, root, number_of_graphs=3200, generations=1, padding_len=9, transform=None, pre_transform=None):
         self.number_of_graphs = number_of_graphs
         self.generations = generations
         self.padding_len = padding_len

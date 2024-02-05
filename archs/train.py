@@ -5,6 +5,19 @@ from analysis.logger import ResultsCollector
 from analysis.timer import timer
 
 def perform_training(opts: Options, train_loader, val_loader, game):
+    """
+    Perform training of a game model using the specified options, train loader, validation loader, and game model.
+
+    Args:
+        opts (Options): The options for training.
+        train_loader: The data loader for the training set.
+        val_loader: The data loader for the validation set.
+        game: The game model to be trained.
+
+    Returns:
+        Training results and the trainer object.
+    """
+    
     core.init(params=[f'--random_seed={opts.random_seed}',
                       '--lr=1e-2',
                       '--optimizer=adam'])

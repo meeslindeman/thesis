@@ -1,8 +1,8 @@
 # Language Emergence GNN
 Language emergence project using graph neural networks.
 
-Initialise dataset:
-init.py
+Initialise dataset (or use pre-generated data folder): 
+init.py (Set amount of children in graph/build.py)
 
 Set general hyperparameters for experiments:
 options.py

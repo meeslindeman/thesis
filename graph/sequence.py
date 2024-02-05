@@ -2,6 +2,16 @@ import torch
 import torch.nn.functional as F
 
 def process_graph_to_sequence(graph, padding_len: int):
+    """
+    Converts a graph into a sequence tensor representation.
+
+    Args:
+        graph (Graph): The input graph.
+        padding_len (int): The desired length of the sequence tensor.
+
+    Returns:
+        torch.Tensor: The sequence tensor representation of the graph.
+    """
     # Vocabulary
     vocab = {'(': 1, ')': 2, 'male': 3, 'female': 4, 'married-to': 5, 'child-of': 6, 'gave-birth-to': 7}
 
