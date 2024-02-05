@@ -14,7 +14,7 @@ class Options:
     gs_tau: float = 1.0 # default: 1.0
 
     # Training
-    n_epochs: int = 2
+    n_epochs: int = 300
     agents: str = 'dual' # 'dual', 'transform', 'gat'
     vocab_size: int = 100 # default: 100
     batch_size: int = 32
