@@ -81,11 +81,11 @@ python main.py --single
 
 ```
 ├── init.py                 # Dataset initialization
-├── main.py                # Main experiment runner
-├── options.py             # Hyperparameter configuration
+├── main.py                 # Main experiment runner
+├── options.py              # Hyperparameter configuration
 ├── graph/
-│   └── build.py          # Graph construction utilities
-└── data/                 # Generated datasets (after running init.py)
+│   └── build.py            # Graph construction utilities
+└── data/                   # Generated datasets (after running init.py)
 ```
 
 ## Results Summary
