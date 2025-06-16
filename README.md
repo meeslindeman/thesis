@@ -69,14 +69,6 @@ Run a single experiment using the configuration from `options.py`:
 python main.py --single
 ```
 
-## Key Features
-
-- **Graph Neural Networks**: Leverages GNNs to process structured relational data
-- **Multi-Agent Framework**: Implements referential games between communicating agents
-- **Compositional Analysis**: Measures and analyzes the compositional properties of emergent languages
-- **Configurable Experiments**: Flexible parameter configuration for various experimental setups
-- **Family Relations Dataset**: Specialized dataset focusing on kinship and social relationships
-
 ## Project Structure
 
 ```
@@ -88,22 +80,5 @@ python main.py --single
 └── data/                   # Generated datasets (after running init.py)
 ```
 
-## Results Summary
-
-- **High Task Accuracy**: Agents successfully solve referential tasks with high accuracy
-- **Entropy-Accuracy Correlation**: Positive correlation between message complexity and task performance
-- **Graph Structure Benefits**: Graph-structured inputs promote topographic similarity in learned representations
-- **Compositional Patterns**: Smaller environments encourage more compositional language structures
-- **Human-AI Language Gap**: Agent languages show higher entropy than efficient human communication patterns
-
-## Technologies Used
-
-- **Python**: Primary programming language
-- **Graph Neural Networks**: For processing structured relational input
-- **Multi-Agent Systems**: Framework for agent communication and learning
-
----
-
-*Final Grade: 8.0/10*
 
 
