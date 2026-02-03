@@ -1,0 +1,28 @@
+name: pytorch-base
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.7
+  - pip=24.2.0
+  - pytorch-cuda=11.8
+  - pytorch=2.5.0
+  - torchvision=0.20.0
+  - torchaudio=2.5.0
+  - pip:
+    - pytorch-lightning==2.4.0
+    - tensorboard==2.17.1
+    - tabulate>=0.9.0
+    - tqdm>=4.66.5
+    - pillow>=10.4.0
+    - notebook>=7.2.2
+    - jupyterlab>=4.2.5
+    - matplotlib>=3.9.2
+    - seaborn>=0.13.2
+    - ipywidgets>=8.1.2
+    - geoopt==0.5.1
+    - hypll==0.1.1
+    - einops==0.8.1
+    - wandb==0.23.0

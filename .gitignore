@@ -1,0 +1,13 @@
+# Datasets
+data/
+
+# Logs and checkpoints
+logs/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# Files
+attention.ipynb
+mac.py
