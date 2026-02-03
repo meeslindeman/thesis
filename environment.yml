@@ -23,6 +23,7 @@ dependencies:
     - seaborn>=0.13.2
     - ipywidgets>=8.1.2
     - geoopt==0.5.1
+    - scipy==1.17.0
     - hypll==0.1.1
     - einops==0.8.1
     - wandb==0.23.0
