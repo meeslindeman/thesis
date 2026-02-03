@@ -1,13 +1,48 @@
-# Datasets
-data/
+# --- OS files ---
+.DS_Store
+Thumbs.db
 
-# Logs and checkpoints
-logs/
-checkpoints/
-*.ckpt
+# --- Python cache ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# --- Virtual environments ---
+.env
+.venv
+env/
+venv/
+*.conda
+*.env
+
+# --- Jupyter Notebook checkpoints ---
+.ipynb_checkpoints/
+
+# --- Logs ---
+*.log
+
+# --- Build / packaging ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- IDE / editor settings ---
+.vscode/
+.idea/
+*.swp
+
+# --- PyTorch / ML artifacts ---
 *.pt
 *.pth
+*.ckpt
 
-# Files
-attention.ipynb
-mac.py
+# --- Data files (optional, depending on project) ---
+data/
+*.csv
+*.tsv
+*.npz
+*.npy
+
