@@ -1,0 +1,3 @@
+[submodule "external/hyperbolic-fully-connected"]
+	path = external/hyperbolic-fully-connected
+	url = https://github.com/ricardo-chavez-torres/hyperbolic-fully-connected.git
