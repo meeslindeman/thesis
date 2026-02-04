@@ -1,6 +1,9 @@
-name: pytorch-base
-channels:
+name: hvit
+channels: 
+  - pytorch   
+  - nvidia
   - conda-forge
+  - defaults
 dependencies:
   - python=3.12.7
   - pip=24.2.0

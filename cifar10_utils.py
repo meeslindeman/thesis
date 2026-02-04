@@ -30,8 +30,8 @@ def read_data_sets(data_dir, validation_size=5000):
                             transforms.Normalize(mean, std)
                         ])
 
-    train_dataset = CIFAR10(root=data_dir, train=True, download=True, transform=data_transforms)
-    test_dataset = CIFAR10(root=data_dir, train=False, download=True, transform=data_transforms)
+    train_dataset = CIFAR10(root=data_dir, train=True, download=False, transform=data_transforms)
+    test_dataset = CIFAR10(root=data_dir, train=False, download=False, transform=data_transforms)
 
     # Subsample the validation set from the train set
     if not 0 <= validation_size <= len(train_dataset):

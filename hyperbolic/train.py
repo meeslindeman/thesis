@@ -96,7 +96,7 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--device", type=str)
 

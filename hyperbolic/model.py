@@ -60,13 +60,13 @@ class LorentzMLP(nn.Module):
         super().__init__()
         self.fc1 = LorentzFullyConnected(
             in_features=config["hidden_size"] + 1, 
-            out_features=config["hidden_size"] + 1,
+            out_features=config["mlp_dim"] + 1,
             manifold=config["manifold"],
             reset_params=config.get("reset_params", "lorentz_kaiming"),
             a_default=config.get("a_default", 0.0)
         )
         self.fc2 = LorentzFullyConnected(
-            in_features=config["hidden_size"] + 1, 
+            in_features=config["mlp_dim"] + 1, 
             out_features=config["hidden_size"] + 1,
             manifold=config["manifold"],
             reset_params=config.get("reset_params", "lorentz_kaiming"),

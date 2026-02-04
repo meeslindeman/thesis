@@ -25,11 +25,12 @@ class Trainer:
         self.optimizer = optimizer
         self.loss_fn = loss_fn
         self.device = device
-        self.device = device
 
     def train(self, trainloader, testloader, epochs):
         # Keep track of the losses and accuracies
         train_losses, test_losses, accuracies = [], [], []
+        print("Starting training...")
+        print(f"Using device: {self.device}")
         # Train the model
         for i in range(epochs):
             train_loss = self.train_epoch(trainloader)
@@ -87,7 +88,7 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--device", type=str)
 
