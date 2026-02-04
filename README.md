@@ -10,7 +10,7 @@ The package is installed in editable mode, so imports work normally while still 
 
 Clone with submodules:
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules https://github.com/meeslindeman/hyperbolic-vit.git
 ```
 or, if already cloned:
 ```bash
@@ -24,11 +24,15 @@ From the repo root:
 pip install -e external/hyperbolic-fully-connected --no-deps
 ```
 Notes:
--e = editable install (imports directly from the submodule folder)
---no-deps = dependencies are managed by our environment .yml
+
+- `-e` = editable install (imports directly from the submodule folder)
+- `--no-deps` = dependencies are managed by our `environment .yml`
 
 #### Updating to latest upstream
 Pull newest commits from the original repository:
 
+```bash
 git submodule update --remote --merge
 git commit -m "Update hyperbolic-fully-connected submodule"
+```
+
