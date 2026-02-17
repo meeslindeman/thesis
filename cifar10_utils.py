@@ -7,9 +7,9 @@ from torch.utils.data import random_split
 from torchvision import transforms
 
 
-def get_dataloader(dataset, batch_size, return_numpy=False):
+def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False, return_numpy=False):
     collate_fn = numpy_collate_fn if return_numpy else None
-    train_dataloader = DataLoader(dataset=dataset["train"], batch_size=batch_size, shuffle=True, drop_last=True, collate_fn=collate_fn)
+    train_dataloader = DataLoader(dataset=dataset["train"], batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, collate_fn=collate_fn)
     validation_dataloader = DataLoader(dataset=dataset["validation"], batch_size=batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn)
     test_dataloader = DataLoader(dataset=dataset["test"], batch_size=batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn)
     return {"train": train_dataloader, "validation": validation_dataloader, "test": test_dataloader}

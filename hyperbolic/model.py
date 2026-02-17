@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from hyperbolic.lorentz import Lorentz
-from hyperbolic.attention import LorentzMHA
+from hyperbolic.attention import LorentzMHA, LorentzMHAEfficient
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -84,6 +84,9 @@ class LorentzMLP(nn.Module):
 class LorentzTransformerBlock(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
+        self.manifold = config["manifold"]
+        self.skip_connection = config["skip_connection"]
+        
         d = config["hidden_size"]          # spatial dim
         D = d + 1                          # lorentz dim
 
@@ -104,9 +107,23 @@ class LorentzTransformerBlock(nn.Module):
 
     def forward(self, x):
         # x is Lorentz: [B, N, D]
-        x = self.attention(x)  # [B, N, D]
-        x = self.mlp(x)        # [B, N, D]
-        return x
+        att_output = self.attention(x)  # [B, N, D]
+
+        if self.skip_connection:
+            x = self.manifold.geodesic_residual(x, att_output, alpha=0.5)
+            # x = self.manifold.lorentz_residual(x, att_output)
+        else:
+            x = att_output
+
+        mlp_output = self.mlp(x)        # [B, N, D]
+
+        if self.skip_connection:
+            mlp_output = self.manifold.geodesic_residual(x, att_output, alpha=0.5)
+            # mlp_output = self.manifold.lorentz_residual(x, mlp_output)
+        else:
+            mlp_output = mlp_output
+
+        return mlp_output
 
 
 class LorentzEncoder(nn.Module):

@@ -1,3 +1,0 @@
-Future convention:
-
-use hidden dim troughout and add +1 when lorentz to make it clear

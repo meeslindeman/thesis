@@ -1,132 +1,228 @@
+import argparse
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from hyperbolic.model import LorentzViT
 from hyperbolic.lorentz import Lorentz
+from hyperbolic.model import LorentzViT
 
-config = {
-    "patch_size": 4,  # Input image size: 32x32 -> 8x8 patches
-    "hidden_size": 48,
-    "num_hidden_layers": 4,
-    "num_attention_heads": 4,
-    "mlp_dim": 4 * 48, # 4 * hidden_size
-    "dropout_rate": 0.0,
-    "initializer_range": 0.02,
-    "image_size": 32,
-    "num_classes": 10, # num_classes of CIFAR10
-    "num_channels": 3,
-    "qkv_bias": True,
-    "use_faster_attention": True,
-}
 
-config["curvature"] = 0.1
-config["manifold"] = Lorentz(config["curvature"])
-config["head_mode"] = "full_midpoint"      # or "split_concat"
-config["concat_mode"] = "direct"           # if split_concat
-config["compute_scores"] = "lorentz_inner"
-config["reset_params"] = "lorentz_kaiming"
-config["a_default"] = 0.0
-
-class Trainer:
-    def __init__(self, model, optimizer, loss_fn, device):
-        self.model = model.to(device)
-        self.optimizer = optimizer
-        self.loss_fn = loss_fn
-        self.device = device
-        self.device = device
-
-    def train(self, trainloader, testloader, epochs):
-        # Keep track of the losses and accuracies
-        train_losses, test_losses, accuracies = [], [], []
-        # Train the model
-        for i in range(epochs):
-            train_loss = self.train_epoch(trainloader)
-            accuracy, test_loss = self.evaluate(testloader)
-            train_losses.append(train_loss)
-            test_losses.append(test_loss)
-            accuracies.append(accuracy)
-            print(f"Epoch: {i+1}, Train loss: {train_loss:.4f}, Test loss: {test_loss:.4f}, Accuracy: {accuracy:.4f}")
-
-    def train_epoch(self, trainloader):
-        self.model.train()
-        total_loss = 0
-        for batch in trainloader:
-            # Move the batch to the device
-            batch = [t.to(self.device) for t in batch]
-            images, labels = batch
-            # Zero the gradients
-            self.optimizer.zero_grad()
-            # Calculate the loss
-            loss = self.loss_fn(self.model(images)[0], labels)
-            # Backpropagate the loss
-            loss.backward()
-            # Update the model's parameters
-            self.optimizer.step()
-            total_loss += loss.item() * len(images)
-        return total_loss / len(trainloader.dataset)
-
-    @torch.no_grad()
-    def evaluate(self, testloader):
-        self.model.eval()
-        total_loss = 0
-        correct = 0
-        with torch.no_grad():
-            for batch in testloader:
-                # Move the batch to the device
-                batch = [t.to(self.device) for t in batch]
-                images, labels = batch
-                
-                # Get predictions
-                logits, _ = self.model(images)
-
-                # Calculate the loss
-                loss = self.loss_fn(logits, labels)
-                total_loss += loss.item() * len(images)
-
-                # Calculate the accuracy
-                predictions = torch.argmax(logits, dim=1)
-                correct += torch.sum(predictions == labels).item()
-        accuracy = correct / len(testloader.dataset)
-        avg_loss = total_loss / len(testloader.dataset)
-        return accuracy, avg_loss
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def parse_args():
-    import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch-size", type=int, default=256)
+
+    # training
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--lr", type=float, default=1e-2)
-    parser.add_argument("--device", type=str)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--weight_decay", type=float, default=0.0)
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--detect_anomaly", action="store_true", default=False)
+
+    # model (LorentzViT)
+    parser.add_argument("--patch_size", type=int, default=4)
+    parser.add_argument("--hidden_size", type=int, default=48)
+    parser.add_argument("--num_hidden_layers", type=int, default=4)
+    parser.add_argument("--num_attention_heads", type=int, default=4)
+    parser.add_argument("--mlp_dim", type=int, default=192)
+    parser.add_argument("--dropout_rate", type=float, default=0.0)
+    parser.add_argument("--initializer_range", type=float, default=0.02)
+    parser.add_argument("--image_size", type=int, default=32)
+    parser.add_argument("--num_classes", type=int, default=10)
+    parser.add_argument("--num_channels", type=int, default=3)
+    parser.add_argument("--qkv_bias", type=int, default=1)  # 0/1 -> bool
+
+    # hyperbolic specifics
+    parser.add_argument("--curvature", type=float, default=0.1)
+    parser.add_argument("--head_mode", type=str, default="split_concat")
+    parser.add_argument("--concat_mode", type=str, default="direct")
+    parser.add_argument("--compute_scores", type=str, default="lorentz_inner")
+    parser.add_argument("--reset_params", type=str, default="lorentz_kaiming")
+    parser.add_argument("--skip_connection", action="store_true", default=False)
+    parser.add_argument("--a_default", type=float, default=0.0)
 
     args = parser.parse_args()
+
     if args.device is None:
         args.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    args.qkv_bias = bool(args.qkv_bias)
     return args
+
+
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_anomaly=False, check_caps=False):
+    if check_caps:
+        model.manifold.reset_cap_stats()
+
+    model.train()
+    total_loss = 0.0
+
+    if detect_anomaly:
+        torch.autograd.set_detect_anomaly(True)
+
+    for images, labels in trainloader:
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True).long()
+
+        optimizer.zero_grad(set_to_none=True)
+
+        logits, _ = model(images)
+
+        # Optional safety check
+        if not torch.isfinite(logits).all():
+            raise RuntimeError("Non-finite logits detected")
+
+        loss = loss_fn(logits, labels)
+
+        if not torch.isfinite(loss):
+            raise RuntimeError("Non-finite loss detected")
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item() * images.size(0)
+    
+    if check_caps:
+        stats = model.manifold.cap_stats()
+        print(
+            f"cap expmap: {100*stats['expmap_frac']:.2f}% "
+            f"({stats['expmap_hits']}/{stats['expmap_total']}), "
+            f"cap geo: {100*stats['geo_frac']:.2f}% "
+            f"({stats['geo_hits']}/{stats['geo_total']})"
+        )
+
+    return total_loss / len(trainloader.dataset)
+
+
+@torch.no_grad()
+def evaluate(model, testloader, loss_fn, device):
+    model.eval()
+    total_loss = 0.0
+    correct = 0
+
+    for images, labels in testloader:
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True).long()
+
+        logits, _ = model(images)
+        loss = loss_fn(logits, labels)
+
+        total_loss += loss.item() * images.size(0)
+        correct += (logits.argmax(dim=1) == labels).sum().item()
+
+    acc = correct / len(testloader.dataset)
+    avg_loss = total_loss / len(testloader.dataset)
+    return acc, avg_loss
+
+
+def hook_io(name):
+    def _hook(module, inputs, output):
+        x = inputs[0]
+        def stats(t, label):
+            bad = (~torch.isfinite(t)).sum().item()
+            nan = torch.isnan(t).sum().item()
+            inf = torch.isinf(t).sum().item()
+            m = torch.isfinite(t)
+            if m.any():
+                tv = t[m]
+                mn, mx = tv.min().item(), tv.max().item()
+            else:
+                mn, mx = float("nan"), float("nan")
+            print(f"[{name}] {label}: bad={bad} nan={nan} inf={inf} "
+                  f"shape={tuple(t.shape)} min/max(finite)={mn}/{mx}", flush=True)
+        stats(x, "IN")
+        stats(output, "OUT")
+        raise RuntimeError("stop")
+    return _hook
 
 
 def main():
     args = parse_args()
-    # Training parameters
-    batch_size = args.batch_size
-    epochs = args.epochs
-    lr = args.lr
-    device = args.device
+    print(args)
 
-    # Load the CIFAR10 dataset
+    set_seed(args.seed)
+
     from cifar10_utils import get_cifar10, get_dataloader
-    dataset = get_cifar10(data_dir='data/', validation_size=5000)
-    dataloaders = get_dataloader(dataset, batch_size)
+
+    dataset = get_cifar10(data_dir="data/", validation_size=5000)
+    dataloaders = get_dataloader(dataset, args.batch_size, shuffle=True, drop_last=True)
     trainloader = dataloaders["train"]
     testloader = dataloaders["test"]
 
-    # Create the model, optimizer, loss function and trainer
-    model = LorentzViT(config)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
+    model_cfg = {
+        "patch_size": args.patch_size,
+        "hidden_size": args.hidden_size,
+        "num_hidden_layers": args.num_hidden_layers,
+        "num_attention_heads": args.num_attention_heads,
+        "mlp_dim": args.mlp_dim,
+        "dropout_rate": args.dropout_rate,
+        "initializer_range": args.initializer_range,
+        "image_size": args.image_size,
+        "num_classes": args.num_classes,
+        "num_channels": args.num_channels,
+        "qkv_bias": args.qkv_bias,
+        "curvature": args.curvature,
+        "manifold": Lorentz(args.curvature),
+        "head_mode": args.head_mode,
+        "concat_mode": args.concat_mode,
+        "compute_scores": args.compute_scores,
+        "reset_params": args.reset_params,
+        "a_default": args.a_default,
+        "skip_connection": args.skip_connection,
+    }
+
+    device = torch.device(args.device)
+    model = LorentzViT(model_cfg).to(device)
+
+    # # after model creation:
+    # model.encoder.blocks[0].attention.W_o.register_forward_hook(hook_io("W_o"))
+
+    # images0, _ = next(iter(trainloader))
+    # images_rep = images0[:1].repeat(128, 1, 1, 1).to(device)
+    # with torch.no_grad():
+    #     _ = model(images_rep)
+
+    # # stop here so training doesn't raise first
+    # return
+
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
     loss_fn = nn.CrossEntropyLoss()
-    trainer = Trainer(model, optimizer, loss_fn, device=device)
-    trainer.train(trainloader, testloader, epochs)
+
+    for epoch in range(args.epochs):
+        train_loss = train_one_epoch(
+            model,
+            trainloader,
+            optimizer,
+            loss_fn,
+            device,
+            detect_anomaly=args.detect_anomaly,
+        )
+        acc, test_loss = evaluate(model, testloader, loss_fn, device)
+
+        print(
+            f"Epoch: {epoch + 1}, "
+            f"Train loss: {train_loss:.4f}, "
+            f"Test loss: {test_loss:.4f}, "
+            f"Accuracy: {acc:.4f}"
+        )
+
 
 if __name__ == "__main__":
     main()

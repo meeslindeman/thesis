@@ -49,4 +49,5 @@ data/
 
 # --- Miscellaneous ---
 *.job
+wandb/
 
