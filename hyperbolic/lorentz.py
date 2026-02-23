@@ -92,6 +92,7 @@ class Lorentz(nn.Module):
         norm_y_space_sq = torch.sum(y_space * y_space, dim=-1, keepdim=True)
         denominator_sqrt = torch.sqrt(torch.clamp(k * norm_y_space_sq, min=eps))
 
+        # Clamp the argument of acosh to be >= 1 to avoid NaNs
         acosh_arg = (sqrt_k * y_time).clamp_min(1.0 + self.eps)
         factor = torch.acosh(acosh_arg) / denominator_sqrt
 
@@ -106,10 +107,13 @@ class Lorentz(nn.Module):
         )
 
     def projx(self, x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
+        """
+        Projects an arbitrary point in R^(1+n) onto the Lorentz hyperboloid along the time dimension, forcing norm to be -1/k.
+        """
         space = x.narrow(dim, 1, x.size(dim)-1)
         time = torch.sqrt(torch.clamp(1.0/self.k() + (space*space).sum(dim=dim, keepdim=True), min=self.eps))
         return torch.cat([time, space], dim=dim)
-    
+
     def proju(self, x: torch.Tensor, v: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
         xv = self.inner(x, v, keepdim=True, dim=dim)          # [..., 1]
         return v + xv * (x / self.k())
@@ -153,9 +157,6 @@ class Lorentz(nn.Module):
         # Compute in float32 for stability (especially under AMP)
         bp = base_point.float()
         vf = v.float()
-
-        # Optional: enforce tangency safely if you don't guarantee it upstream
-        # vf = self.proju(bp, vf)
 
         k = self.k().float()
         sqrt_k = torch.sqrt(k)
@@ -241,7 +242,7 @@ class Lorentz(nn.Module):
         """
         Compute the Lorentz midpoint of a set of points xs with optional weights.
         """
-        # xs: [..., M, D] (your code uses dim=-2 as the "set" dimension)
+        # xs: [..., M, D] 
         if weights is None:
             numerator = xs.sum(dim=-2)
         else:
@@ -258,8 +259,8 @@ class Lorentz(nn.Module):
         denom = torch.sqrt(denom_sq) * torch.sqrt(self.k())
         out = numerator / denom
 
-        # Optional but recommended: force onto manifold exactly
-        out = self.projx(out)
+        # # Optional but recommended: force onto manifold exactly
+        # out = self.projx(out)
         return out
 
     def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, alpha: float = 0.5) -> torch.Tensor:

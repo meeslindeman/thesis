@@ -157,6 +157,7 @@ class LorentzMHA(nn.Module):
 
     def _concat_heads_direct(self, x: torch.Tensor) -> torch.Tensor:
         # Qu, E., et al. (https://openreview.net/forum?id=NQi9U0YLW3)
+        # Recompute time coordinate to ensure output is on the manifold after concatenating spatial components.
         B, H, N, Dh = x.shape
         d_head = Dh - 1
         k = torch.as_tensor(self.manifold.k(), device=x.device, dtype=x.dtype)
@@ -176,7 +177,7 @@ class LorentzMHA(nn.Module):
         return out
     
     def _concat_heads_log_radius(self, x: torch.Tensor) -> torch.Tensor:
-        # Anonymous, et al. (https://openreview.net/forum?id=NNnkLi1ALt)
+        # Shi, et al. (https://openreview.net/forum?id=NNnkLi1ALt)
         B, H, N, Dh = x.shape
         d_head = Dh - 1
         k = torch.as_tensor(self.manifold.k(), device=x.device, dtype=x.dtype)
