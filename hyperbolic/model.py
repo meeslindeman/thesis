@@ -104,13 +104,15 @@ class LorentzTransformerBlock(nn.Module):
         )
 
         self.mlp = LorentzMLP(config)
+        self.res_scale_att = nn.Parameter(torch.tensor(0.1))
+        self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x):
         # x is Lorentz: [B, N, D]
         att_output = self.attention(x)  # [B, N, D]
 
         if self.skip_connection:
-            x = self.manifold.geodesic_residual(x, att_output, alpha=0.5)
+            x = self.manifold.geodesic_residual(x, att_output, alpha=self.res_scale_att)
             # x = self.manifold.lorentz_residual(x, att_output)
         else:
             x = att_output
@@ -118,7 +120,7 @@ class LorentzTransformerBlock(nn.Module):
         mlp_output = self.mlp(x)        # [B, N, D]
 
         if self.skip_connection:
-            mlp_output = self.manifold.geodesic_residual(x, att_output, alpha=0.5)
+            mlp_output = self.manifold.geodesic_residual(x, mlp_output, alpha=self.res_scale_mlp)
             # mlp_output = self.manifold.lorentz_residual(x, mlp_output)
         else:
             mlp_output = mlp_output
@@ -154,9 +156,13 @@ class LorentzViT(nn.Module):
             a_default=config.get("a_default", 0.0),
             do_mlr=True
         )
+        self.pre_ln = nn.LayerNorm(config["hidden_size"], elementwise_affine=True)
+        self.pre_scale = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x):
         x_euc = self.embedding(x)               # [B, N, d]
+        x_euc = self.pre_ln(x_euc) * self.pre_scale
+        
         x_lor = self.manifold.expmap0(x_euc)    # [B, N, D]
         x_lor = self.encoder(x_lor)             # [B, N, D]
         cls = x_lor[:, 0, :]                    # [B, D]
