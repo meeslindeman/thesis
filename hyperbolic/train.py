@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--detect_anomaly", action="store_true", default=False)
+    parser.add_argument("--check_caps", action="store_true", default=False)
+    parser.add_argument("--check_metrics", action="store_true", default=False)
 
     # model (LorentzViT)
     parser.add_argument("--patch_size", type=int, default=4)
@@ -44,6 +46,7 @@ def parse_args():
     parser.add_argument("--num_classes", type=int, default=10)
     parser.add_argument("--num_channels", type=int, default=3)
     parser.add_argument("--qkv_bias", type=int, default=1)  # 0/1 -> bool
+    parser.add_argument("--final_op", type=str, default="cls")  # "cls" or "midpoint"    
 
     # hyperbolic specifics
     parser.add_argument("--curvature", type=float, default=0.1)
@@ -63,12 +66,15 @@ def parse_args():
     return args
 
 
-def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_anomaly=False, check_caps=False):
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_anomaly=False, check_caps=False, check_metrics=False):
     if check_caps:
         model.manifold.reset_cap_stats()
 
     model.train()
     total_loss = 0.0
+
+    metric_sums = {}
+    metric_counts = {}
 
     if detect_anomaly:
         torch.autograd.set_detect_anomaly(True)
@@ -79,9 +85,16 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
 
         optimizer.zero_grad(set_to_none=True)
 
-        logits, _ = model(images)
+        logits, metrics = model(images, return_metrics=check_metrics)
 
-        # Optional safety check
+        if metrics is not None:
+            for stage, vals in metrics.items():
+                for k, v in vals.items():
+                    key = f"{stage}.{k}"
+                    metric_sums[key] = metric_sums.get(key, 0.0) + float(v)
+                    metric_counts[key] = metric_counts.get(key, 0) + 1
+
+        # Safety check
         if not torch.isfinite(logits).all():
             raise RuntimeError("Non-finite logits detected")
 
@@ -94,12 +107,14 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
         optimizer.step()
 
         total_loss += loss.item() * images.size(0)
+
+    if metric_sums:
+        metric_means = {k: metric_sums[k] / metric_counts[k] for k in metric_sums}
+        print(f"epoch metrics: {metric_means}")
     
     if check_caps:
         stats = model.manifold.cap_stats()
         print(
-            f"cap expmap: {100*stats['expmap_frac']:.2f}% "
-            f"({stats['expmap_hits']}/{stats['expmap_total']}), "
             f"cap geo: {100*stats['geo_frac']:.2f}% "
             f"({stats['geo_hits']}/{stats['geo_total']})"
         )
@@ -117,7 +132,7 @@ def evaluate(model, testloader, loss_fn, device):
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
 
-        logits, _ = model(images)
+        logits, _ = model(images, return_metrics=False)
         loss = loss_fn(logits, labels)
 
         total_loss += loss.item() * images.size(0)
@@ -182,6 +197,7 @@ def main():
         "reset_params": args.reset_params,
         "a_default": args.a_default,
         "skip_connection": args.skip_connection,
+        "final_op": args.final_op
     }
 
     device = torch.device(args.device)
@@ -213,6 +229,8 @@ def main():
             loss_fn,
             device,
             detect_anomaly=args.detect_anomaly,
+            check_caps=args.check_caps,
+            check_metrics=args.check_metrics
         )
         acc, test_loss = evaluate(model, testloader, loss_fn, device)
 

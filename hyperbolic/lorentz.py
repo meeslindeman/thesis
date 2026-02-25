@@ -24,8 +24,6 @@ class Lorentz(nn.Module):
 
         self._k = torch.nn.Parameter(torch.tensor(k), requires_grad=requires_grad)
 
-        self.register_buffer("cap_hits", torch.zeros((), dtype=torch.long))
-        self.register_buffer("cap_total", torch.zeros((), dtype=torch.long))
         self.register_buffer("cap_hits_geo", torch.zeros((), dtype=torch.long))
         self.register_buffer("cap_total_geo", torch.zeros((), dtype=torch.long))
 
@@ -253,7 +251,7 @@ class Lorentz(nn.Module):
         s = numerator[..., 1:]
         denom_sq = (t * t) - (s * s).sum(dim=-1, keepdim=True)
 
-        # Clamp away negatives / zeros (critical)
+        # Clamp away negatives / zeros 
         denom_sq = denom_sq.clamp_min(self.eps)
 
         denom = torch.sqrt(denom_sq) * torch.sqrt(self.k())
@@ -268,8 +266,8 @@ class Lorentz(nn.Module):
         Residual connection Exp_x( alpha * Log_x(y) ), computed robustly in float32.
         """
         # Project inputs (keeps acosh domain valid)
-        x = self.projx(x)
-        y = self.projx(y)
+        # x = self.projx(x)
+        # y = self.projx(y)
 
         # Disable autocast for hyperbolic ops
         with torch.autocast(device_type="cuda", enabled=False):
@@ -292,10 +290,10 @@ class Lorentz(nn.Module):
 
             v = v * scale
 
-            out = self.expmap(xf, v)         # your expmap already rescales; keep it float32
+            out = self.expmap(xf, v)        
 
         out = out.to(x.dtype)
-        out = self.projx(out)
+        # out = self.projx(out)
         return out
 
 
@@ -352,17 +350,12 @@ class Lorentz(nn.Module):
             return (float(h.item()) / t) if t > 0 else 0.0
 
         return {
-            "expmap_frac": frac(self.cap_hits_expmap, self.cap_total_expmap),
             "geo_frac": frac(self.cap_hits_geo, self.cap_total_geo),
-            "expmap_hits": int(self.cap_hits_expmap.item()),
-            "expmap_total": int(self.cap_total_expmap.item()),
             "geo_hits": int(self.cap_hits_geo.item()),
             "geo_total": int(self.cap_total_geo.item()),
         }
 
     @torch.no_grad()
     def reset_cap_stats(self):
-        self.cap_hits_expmap.zero_()
-        self.cap_total_expmap.zero_()
         self.cap_hits_geo.zero_()
         self.cap_total_geo.zero_()
