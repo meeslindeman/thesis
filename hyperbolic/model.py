@@ -1,11 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from hyperbolic.lorentz import Lorentz
 from hyperbolic.attention import LorentzMHA, LorentzMHAEfficient
 from layers.LLinear import LorentzFullyConnected
 
+
+def _check_finite(t: torch.Tensor, tag: str):
+    if not torch.isfinite(t).all():
+        finite = t[torch.isfinite(t)]
+        fin_min = float(finite.min()) if finite.numel() else float("nan")
+        fin_max = float(finite.max()) if finite.numel() else float("nan")
+        raise RuntimeError(
+            f"NON-FINITE at {tag}: shape={tuple(t.shape)} "
+            f"finite_min={fin_min} finite_max={fin_max} "
+            f"bad_count={(~torch.isfinite(t)).sum().item()}"
+        )
 
 class PatchEmbeddings(nn.Module):
     def __init__(self, config):
@@ -114,24 +126,33 @@ class LorentzTransformerBlock(nn.Module):
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
 
-    def forward(self, x):
-        # x is Lorentz: [B, N, D]
-        att_output = self.attention(x)  # [B, N, D]
+        self._debug = True
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self._debug: _check_finite(x, "block.in")
+
+        att_output = self.attention(x)
+        if self._debug: _check_finite(att_output, "block.attention.out")
 
         if self.skip_connection:
-            x = self.manifold.geodesic_residual(x, att_output, alpha=self.res_scale_att)
-            # x = self.manifold.lorentz_residual(x, att_output)
+            x2 = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
+            if self._debug: _check_finite(x2, "block.residual1(out of geodesic_residual)")
+            x = x2
         else:
             x = att_output
 
-        mlp_output = self.mlp(x)        # [B, N, D]
+        if self._debug: _check_finite(x, "block.after_skip1")
+
+        mlp_output = self.mlp(x)
+        if self._debug: _check_finite(mlp_output, "block.mlp.out")
 
         if self.skip_connection:
-            mlp_output = self.manifold.geodesic_residual(x, mlp_output, alpha=self.res_scale_mlp)
-            # mlp_output = self.manifold.lorentz_residual(x, mlp_output)
-        else:
-            mlp_output = mlp_output
+            y = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
+            # TODO: maybe look at step size here
+            if self._debug: _check_finite(y, "block.residual2(out of geodesic_residual)")
+            mlp_output = y
 
+        if self._debug: _check_finite(mlp_output, "block.out")
         return mlp_output
 
 
@@ -143,7 +164,7 @@ class LorentzEncoder(nn.Module):
             block = (LorentzTransformerBlock(config))
             self.blocks.append(block)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         for block in self.blocks:
             x = block(x)
         return x
@@ -213,11 +234,23 @@ class LorentzViT(nn.Module):
                 "r_p95": torch.quantile(r.flatten(), 0.95).item(),
             }
 
+    def print_stats(self, name, t):
+        t = t.detach()
+        print(f"{name}: mean={t.mean().item():.4f}, std={t.std(unbiased=True).item():.4f}, "
+            f"p95={torch.quantile(t.flatten(), 0.95).item():.4f}, max={t.max().item():.4f}")
+
     def forward(self, x: torch.Tensor, return_metrics: bool = False):
         metrics = {} if return_metrics else None
 
         x_euc = self.embedding(x)                    # [B, N, d]
-        x_euc = self.pre_ln(x_euc) * self.pre_scale  # [B, N, d]
+
+        # x_euc = self.pre_ln(x_euc) * self.pre_scale  # [B, N, d]
+
+        # L2 normalization
+        x_euc = x_euc / (x_euc.norm(dim=-1, keepdim=True).clamp_min(1e-6))
+
+        # t = x_euc.norm(dim=-1) 
+        # self.print_stats("pre_expmap0_token_norm", t)
 
         x_lor0 = self.manifold.expmap0(x_euc)        # [B, N, D]
         if return_metrics:

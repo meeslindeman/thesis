@@ -9,6 +9,113 @@ import torch.optim as optim
 from hyperbolic.lorentz import Lorentz
 from hyperbolic.model import LorentzViT
 
+import traceback
+from contextlib import contextmanager
+
+def _iter_tensors(x):
+    if torch.is_tensor(x):
+        yield x
+    elif isinstance(x, (list, tuple)):
+        for y in x:
+            yield from _iter_tensors(y)
+    elif isinstance(x, dict):
+        for y in x.values():
+            yield from _iter_tensors(y)
+
+class FirstNonFiniteError(RuntimeError):
+    pass
+
+def register_first_nonfinite_hooks(
+    model: nn.Module,
+    *,
+    include_backward: bool = False,
+    only_modules_with_params: bool = False,
+    ignore_modules: tuple[type, ...] = (),
+):
+    """
+    Registers hooks on modules to catch the first NaN/Inf in forward (and optionally backward).
+    Raises immediately with module name/type and tensor stats.
+    """
+    handles = []
+    tripped = {"flag": False}
+
+    def should_hook(m: nn.Module) -> bool:
+        if ignore_modules and isinstance(m, ignore_modules):
+            return False
+        if only_modules_with_params:
+            return any(p.requires_grad for p in m.parameters(recurse=False))
+        return True
+
+    def forward_hook(name):
+        def hook(mod, inp, out):
+            if tripped["flag"]:
+                return
+            for t in _iter_tensors(out):
+                if t.numel() == 0:
+                    continue
+                if not torch.isfinite(t).all():
+                    tripped["flag"] = True
+                    # summarize without crashing on NaNs
+                    finite = t[torch.isfinite(t)]
+                    fin_min = float(finite.min()) if finite.numel() else float("nan")
+                    fin_max = float(finite.max()) if finite.numel() else float("nan")
+                    msg = (
+                        f"\nFIRST NON-FINITE in forward\n"
+                        f"module: {name} ({mod.__class__.__name__})\n"
+                        f"output: shape={tuple(t.shape)} dtype={t.dtype} device={t.device}\n"
+                        f"finite_min={fin_min} finite_max={fin_max}\n"
+                        f"nan_count={(~torch.isfinite(t)).sum().item()}\n"
+                    )
+                    print(msg)
+                    print("Python stack (most recent call last):")
+                    traceback.print_stack(limit=30)
+                    raise FirstNonFiniteError(msg)
+        return hook
+
+    def backward_hook(name):
+        def hook(mod, grad_in, grad_out):
+            if tripped["flag"]:
+                return
+            for t in _iter_tensors(grad_out):
+                if t is None or (torch.is_tensor(t) and t.numel() == 0):
+                    continue
+                if torch.is_tensor(t) and (not torch.isfinite(t).all()):
+                    tripped["flag"] = True
+                    finite = t[torch.isfinite(t)]
+                    fin_min = float(finite.min()) if finite.numel() else float("nan")
+                    fin_max = float(finite.max()) if finite.numel() else float("nan")
+                    msg = (
+                        f"\nFIRST NON-FINITE in backward\n"
+                        f"module: {name} ({mod.__class__.__name__})\n"
+                        f"grad_out: shape={tuple(t.shape)} dtype={t.dtype} device={t.device}\n"
+                        f"finite_min={fin_min} finite_max={fin_max}\n"
+                        f"nan_count={(~torch.isfinite(t)).sum().item()}\n"
+                    )
+                    print(msg)
+                    print("Python stack (most recent call last):")
+                    traceback.print_stack(limit=30)
+                    raise FirstNonFiniteError(msg)
+        return hook
+
+    for name, m in model.named_modules():
+        if not should_hook(m):
+            continue
+        handles.append(m.register_forward_hook(forward_hook(name)))
+        if include_backward:
+            # full backward hook is safer than legacy backward_hook
+            handles.append(m.register_full_backward_hook(backward_hook(name)))
+
+    return handles
+
+@contextmanager
+def hook_context(handles):
+    try:
+        yield
+    finally:
+        for h in handles:
+            h.remove()
+
+# ==============================================================================
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -143,27 +250,6 @@ def evaluate(model, testloader, loss_fn, device):
     return acc, avg_loss
 
 
-def hook_io(name):
-    def _hook(module, inputs, output):
-        x = inputs[0]
-        def stats(t, label):
-            bad = (~torch.isfinite(t)).sum().item()
-            nan = torch.isnan(t).sum().item()
-            inf = torch.isinf(t).sum().item()
-            m = torch.isfinite(t)
-            if m.any():
-                tv = t[m]
-                mn, mx = tv.min().item(), tv.max().item()
-            else:
-                mn, mx = float("nan"), float("nan")
-            print(f"[{name}] {label}: bad={bad} nan={nan} inf={inf} "
-                  f"shape={tuple(t.shape)} min/max(finite)={mn}/{mx}", flush=True)
-        stats(x, "IN")
-        stats(output, "OUT")
-        raise RuntimeError("stop")
-    return _hook
-
-
 def main():
     args = parse_args()
     print(args)
@@ -203,16 +289,12 @@ def main():
     device = torch.device(args.device)
     model = LorentzViT(model_cfg).to(device)
 
-    # # after model creation:
-    # model.encoder.blocks[0].attention.W_o.register_forward_hook(hook_io("W_o"))
 
-    # images0, _ = next(iter(trainloader))
-    # images_rep = images0[:1].repeat(128, 1, 1, 1).to(device)
-    # with torch.no_grad():
-    #     _ = model(images_rep)
-
-    # # stop here so training doesn't raise first
-    # return
+    handles = register_first_nonfinite_hooks(
+        model,
+        include_backward=False,          # set True if you also suspect grads
+        only_modules_with_params=False,  # set True to reduce noise
+    )
 
     optimizer = optim.AdamW(
         model.parameters(),

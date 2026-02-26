@@ -116,64 +116,64 @@ class Lorentz(nn.Module):
         xv = self.inner(x, v, keepdim=True, dim=dim)          # [..., 1]
         return v + xv * (x / self.k())
 
-    def logmap(self, base_point: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """
-        Logarithmic map for the Lorentz model at an arbitrary base point.
-        """
-        # Compute in float32 for stability
-        bp = base_point.float()
-        y  = x.float()
-        k  = self.k().float()
+    # def logmap(self, base_point: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     Logarithmic map for the Lorentz model at an arbitrary base point.
+    #     """
+    #     # Compute in float32 for stability
+    #     bp = base_point.float()
+    #     y  = x.float()
+    #     k  = self.k().float()
 
-        if bp.dim() < y.dim():
-            bp = bp.unsqueeze(-2)
+    #     if bp.dim() < y.dim():
+    #         bp = bp.unsqueeze(-2)
 
-        # Lorentz inner <bp, y>_L (keepdim False here, then unsqueeze)
-        inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
+    #     # Lorentz inner <bp, y>_L (keepdim False here, then unsqueeze)
+    #     inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
 
-        # alpha = -k * <bp, y>_L  (should be >= 1)
-        alpha = (-k * inner).clamp_min(1.0 + 1e-6)
+    #     # alpha = -k * <bp, y>_L  (should be >= 1)
+    #     alpha = (-k * inner).clamp_min(1.0 + 1e-6)
 
-        # direction = y - alpha * bp  (tangent at bp)
-        direction = y - alpha.unsqueeze(-1) * bp
+    #     # direction = y - alpha * bp  (tangent at bp)
+    #     direction = y - alpha.unsqueeze(-1) * bp
 
-        # denom = sqrt(alpha^2 - 1)
-        denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
+    #     # denom = sqrt(alpha^2 - 1)
+    #     denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
 
-        factor = torch.acosh(alpha) / denom
-        v = factor.unsqueeze(-1) * direction
+    #     factor = torch.acosh(alpha) / denom
+    #     v = factor.unsqueeze(-1) * direction
 
-        return v.to(x.dtype)
+    #     return v.to(x.dtype)
 
-    def expmap(self, base_point: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        """
-        Exponential map on the Lorentz hyperboloid at an arbitrary base point.
-        """
-        if base_point.dim() == 2 and v.dim() == 3:
-            base_point = base_point.unsqueeze(1)
+    # def expmap(self, base_point: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     Exponential map on the Lorentz hyperboloid at an arbitrary base point.
+    #     """
+    #     if base_point.dim() == 2 and v.dim() == 3:
+    #         base_point = base_point.unsqueeze(1)
 
-        # Compute in float32 for stability (especially under AMP)
-        bp = base_point.float()
-        vf = v.float()
+    #     # Compute in float32 for stability (especially under AMP)
+    #     bp = base_point.float()
+    #     vf = v.float()
 
-        k = self.k().float()
-        sqrt_k = torch.sqrt(k)
+    #     k = self.k().float()
+    #     sqrt_k = torch.sqrt(k)
 
-        # Minkowski squared norm <v,v>_L (should be >= 0 for spacelike tangent vectors)
-        vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
-        norm_v = torch.sqrt(vv)                         # [..., 1]
-        arg = sqrt_k * norm_v                           # [..., 1]
+    #     # Minkowski squared norm <v,v>_L (should be >= 0 for spacelike tangent vectors)
+    #     vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
+    #     norm_v = torch.sqrt(vv)                         # [..., 1]
+    #     arg = sqrt_k * norm_v                           # [..., 1]
 
-        # Coefficients; handle arg ~ 0 with the limit sinh(arg)/arg -> 1
-        left_coeff = torch.cosh(arg)
-        right_coeff = torch.where(
-            arg < 1e-6,
-            torch.ones_like(arg),
-            torch.sinh(arg) / arg
-        )
+    #     # Coefficients; handle arg ~ 0 with the limit sinh(arg)/arg -> 1
+    #     left_coeff = torch.cosh(arg)
+    #     right_coeff = torch.where(
+    #         arg < 1e-6,
+    #         torch.ones_like(arg),
+    #         torch.sinh(arg) / arg
+    #     )
 
-        out = left_coeff * bp + right_coeff * vf
-        return out.to(base_point.dtype)
+    #     out = left_coeff * bp + right_coeff * vf
+    #     return out.to(base_point.dtype)
 
     def parallel_transport(self, base_point: torch.Tensor, tangent_vec: torch.Tensor, to_point: torch.Tensor) -> torch.Tensor:
         """
@@ -261,40 +261,40 @@ class Lorentz(nn.Module):
         # out = self.projx(out)
         return out
 
-    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, alpha: float = 0.5) -> torch.Tensor:
-        """
-        Residual connection Exp_x( alpha * Log_x(y) ), computed robustly in float32.
-        """
-        # Project inputs (keeps acosh domain valid)
-        # x = self.projx(x)
-        # y = self.projx(y)
+    # def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, alpha: float = 0.5) -> torch.Tensor:
+    #     """
+    #     Residual connection Exp_x( alpha * Log_x(y) ), computed robustly in float32.
+    #     """
+    #     # Project inputs (keeps acosh domain valid)
+    #     # x = self.projx(x)
+    #     # y = self.projx(y)
 
-        # Disable autocast for hyperbolic ops
-        with torch.autocast(device_type="cuda", enabled=False):
-            xf = x.float()
-            yf = y.float()
+    #     # Disable autocast for hyperbolic ops
+    #     with torch.autocast(device_type="cuda", enabled=False):
+    #         xf = x.float()
+    #         yf = y.float()
 
-            v = self.logmap(xf, yf)          # already float32 inside
-            v = v * float(alpha)
+    #         v = self.logmap(xf, yf)          # already float32 inside
+    #         v = v * float(alpha)
 
-            # Step cap BEFORE anything else uses v
-            vv = self.inner(v, v, keepdim=True, dim=-1).clamp_min(1e-8)
-            norm_v = torch.sqrt(vv)
-            max_step = 5.0 / torch.sqrt(self.k().float())      # arg<=5
-            scale = (max_step / norm_v).clamp_max(1.0)
+    #         # Step cap BEFORE anything else uses v
+    #         vv = self.inner(v, v, keepdim=True, dim=-1).clamp_min(1e-8)
+    #         norm_v = torch.sqrt(vv)
+    #         max_step = 5.0 / torch.sqrt(self.k().float())      # arg<=5
+    #         scale = (max_step / norm_v).clamp_max(1.0)
 
-            hits = (scale < 1.0).sum()
-            total = scale.numel()
-            self.cap_hits_geo += hits.to(self.cap_hits_geo.dtype)
-            self.cap_total_geo += torch.as_tensor(total, device=scale.device, dtype=self.cap_total_geo.dtype)
+    #         hits = (scale < 1.0).sum()
+    #         total = scale.numel()
+    #         self.cap_hits_geo += hits.to(self.cap_hits_geo.dtype)
+    #         self.cap_total_geo += torch.as_tensor(total, device=scale.device, dtype=self.cap_total_geo.dtype)
 
-            v = v * scale
+    #         v = v * scale
 
-            out = self.expmap(xf, v)        
+    #         out = self.expmap(xf, v)        
 
-        out = out.to(x.dtype)
-        # out = self.projx(out)
-        return out
+    #     out = out.to(x.dtype)
+    #     # out = self.projx(out)
+    #     return out
 
 
     def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 0.5, wy: float = 0.5, eps: float = 1e-9) -> torch.Tensor:
@@ -359,3 +359,155 @@ class Lorentz(nn.Module):
     def reset_cap_stats(self):
         self.cap_hits_geo.zero_()
         self.cap_total_geo.zero_()
+
+    @staticmethod
+    def _chk(t: torch.Tensor, tag: str):
+        if not torch.isfinite(t).all():
+            finite = t[torch.isfinite(t)]
+            fin_min = float(finite.min()) if finite.numel() else float("nan")
+            fin_max = float(finite.max()) if finite.numel() else float("nan")
+            bad = (~torch.isfinite(t)).sum().item()
+            raise RuntimeError(f"NON-FINITE at {tag}: shape={tuple(t.shape)} "
+                            f"finite_min={fin_min} finite_max={fin_max} bad_count={bad}")
+
+    @staticmethod
+    def _stat(t: torch.Tensor, tag: str):
+        # optional: quick magnitude sanity (finite-only)
+        finite = t[torch.isfinite(t)]
+        if finite.numel():
+            m = float(finite.abs().max())
+            if m > 1e6:
+                print(f"[warn] {tag} |max|={m:.3e}")
+
+    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
+        with torch.autocast(device_type="cuda", enabled=False):
+            xf = x.float()
+            yf = y.float()
+
+            self._chk(xf, "geo_res.xf")
+            self._chk(yf, "geo_res.yf")
+
+            v = self.logmap(xf, yf)
+            self._chk(v, "geo_res.v_after_logmap")
+            self._stat(v, "geo_res.v_after_logmap")
+
+            v = v * float(weight)
+            self._chk(v, "geo_res.v_after_weight")
+            self._stat(v, "geo_res.v_after_weight")
+
+            # IMPORTANT: check vv before clamp_min; clamp does NOT remove NaNs
+            vv_raw = self.inner(v, v, keepdim=True, dim=-1)
+            self._chk(vv_raw, "geo_res.vv_raw_inner(v,v)")
+            # vv_raw can be negative (timelike) or near zero; you are assuming it should be >=0.
+            # track if it's often negative/invalid
+            if (vv_raw <= 0).any():
+                # not an error necessarily, but a strong signal that v is not a valid spacelike tangent
+                neg = (vv_raw <= 0).sum().item()
+                tot = vv_raw.numel()
+                print(f"[warn] geo_res.vv_raw has {neg}/{tot} <= 0")
+
+            vv = vv_raw.clamp_min(1e-8)
+            self._chk(vv, "geo_res.vv_clamped")
+
+            norm_v = torch.sqrt(vv)
+            self._chk(norm_v, "geo_res.norm_v")
+
+            max_step = 5.0 / torch.sqrt(self.k().float())
+            scale = (max_step / norm_v).clamp_max(1.0)
+            self._chk(scale, "geo_res.scale")
+
+            v = v * scale
+            self._chk(v, "geo_res.v_after_cap")
+            self._stat(v, "geo_res.v_after_cap")
+
+            out = self.expmap(xf, v)
+            self._chk(out, "geo_res.out_after_expmap")
+            self._stat(out, "geo_res.out_after_expmap")
+
+        return out.to(x.dtype)
+
+    def logmap(self, base_point: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        bp = base_point.float()
+        y  = x.float()
+        k  = self.k().float()
+
+        if bp.dim() < y.dim():
+            bp = bp.unsqueeze(-2)
+
+        self._chk(bp, "logmap.bp")
+        self._chk(y,  "logmap.y")
+
+        inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
+        self._chk(inner, "logmap.inner(<bp,y>_L)")
+
+        alpha_raw = (-k * inner)
+        self._chk(alpha_raw, "logmap.alpha_raw=-k*inner")
+
+        # This is the critical diagnostic: if alpha_raw is far below 1,
+        # your points are not on the hyperboloid (or have wrong time orientation),
+        # and clamping to 1+eps makes direction not tangent and can explode downstream.
+        min_alpha = float(alpha_raw.min().detach().cpu())
+        if min_alpha < 0.9:
+            print(f"[warn] logmap alpha_raw min={min_alpha:.6f} (<1). Inputs likely off-manifold.")
+
+        alpha = alpha_raw.clamp_min(1.0 + 1e-6)
+        self._chk(alpha, "logmap.alpha_clamped")
+
+        direction = y - alpha.unsqueeze(-1) * bp
+        self._chk(direction, "logmap.direction=y-alpha*bp")
+        self._stat(direction, "logmap.direction")
+
+        denom_arg = alpha * alpha - 1.0
+        self._chk(denom_arg, "logmap.denom_arg=alpha^2-1") # THIS IS THE PROBLEM
+
+        denom = torch.sqrt(torch.clamp(denom_arg, min=1e-8))
+        self._chk(denom, "logmap.denom=sqrt(clamp(alpha^2-1))")
+
+        ac = torch.acosh(alpha)
+        self._chk(ac, "logmap.acosh(alpha)")
+
+        factor = ac / denom
+        self._chk(factor, "logmap.factor=acosh/denom")
+        self._stat(factor, "logmap.factor")
+
+        v = factor.unsqueeze(-1) * direction
+        self._chk(v, "logmap.v=factor*direction")
+        self._stat(v, "logmap.v")
+
+        return v.to(x.dtype)
+
+    def expmap(self, base_point: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        if base_point.dim() == 2 and v.dim() == 3:
+            base_point = base_point.unsqueeze(1)
+
+        bp = base_point.float()
+        vf = v.float()
+        k = self.k().float()
+        sqrt_k = torch.sqrt(k)
+
+        self._chk(bp, "expmap.bp")
+        self._chk(vf, "expmap.vf")
+
+        vv_raw = self.inner(vf, vf, keepdim=True, dim=-1)
+        self._chk(vv_raw, "expmap.vv_raw_inner(v,v)")
+
+        vv = vv_raw.clamp_min(1e-8)
+        self._chk(vv, "expmap.vv_clamped")
+
+        norm_v = torch.sqrt(vv)
+        self._chk(norm_v, "expmap.norm_v")
+
+        arg = sqrt_k * norm_v
+        self._chk(arg, "expmap.arg=sqrt_k*norm_v")
+
+        left_coeff = torch.cosh(arg)
+        self._chk(left_coeff, "expmap.cosh(arg)")
+
+        right_coeff = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
+        self._chk(right_coeff, "expmap.right_coeff=sinh(arg)/arg")
+
+        out = left_coeff * bp + right_coeff * vf
+        self._chk(out, "expmap.out=left*bp+right*vf")
+        self._stat(out, "expmap.out")
+
+        return out.to(base_point.dtype)
