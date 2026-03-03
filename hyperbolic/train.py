@@ -1,5 +1,6 @@
 import argparse
 import random
+import time
 
 import numpy as np
 import torch
@@ -153,12 +154,16 @@ def parse_args():
     parser.add_argument("--num_classes", type=int, default=10)
     parser.add_argument("--num_channels", type=int, default=3)
     parser.add_argument("--qkv_bias", type=int, default=1)  # 0/1 -> bool
-    parser.add_argument("--final_op", type=str, default="cls")  # "cls" or "midpoint"    
+
+    # ablations
+    parser.add_argument("--final_op", type=str, default="pooling")  # "cls" or "pooling"    
+    parser.add_argument("--patch_embed_type", type=str, default="linear")  # "conv" or "linear"
+    parser.add_argument("--embeddings", type=str, default="lorentz")  # "lorentz" or "euclidean"
 
     # hyperbolic specifics
     parser.add_argument("--curvature", type=float, default=0.1)
     parser.add_argument("--head_mode", type=str, default="split_concat")
-    parser.add_argument("--concat_mode", type=str, default="direct")
+    parser.add_argument("--concat_mode", type=str, default="logradius") # "direct" or "logradius"
     parser.add_argument("--compute_scores", type=str, default="lorentz_inner")
     parser.add_argument("--reset_params", type=str, default="lorentz_kaiming")
     parser.add_argument("--skip_connection", action="store_true", default=False)
@@ -200,6 +205,10 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
                     key = f"{stage}.{k}"
                     metric_sums[key] = metric_sums.get(key, 0.0) + float(v)
                     metric_counts[key] = metric_counts.get(key, 0) + 1
+        
+        # if metric_sums:
+        #     metric_means = {k: metric_sums[k] / metric_counts[k] for k in metric_sums}
+        #     print(f"epoch metrics: {metric_means}")
 
         # Safety check
         if not torch.isfinite(logits).all():
@@ -256,6 +265,8 @@ def main():
 
     set_seed(args.seed)
 
+    run_start = time.perf_counter()
+
     from cifar10_utils import get_cifar10, get_dataloader
 
     dataset = get_cifar10(data_dir="data/", validation_size=5000)
@@ -283,18 +294,19 @@ def main():
         "reset_params": args.reset_params,
         "a_default": args.a_default,
         "skip_connection": args.skip_connection,
-        "final_op": args.final_op
+        "final_op": args.final_op,
+        "embeddings": args.embeddings
     }
 
     device = torch.device(args.device)
     model = LorentzViT(model_cfg).to(device)
 
 
-    handles = register_first_nonfinite_hooks(
-        model,
-        include_backward=False,          # set True if you also suspect grads
-        only_modules_with_params=False,  # set True to reduce noise
-    )
+    # handles = register_first_nonfinite_hooks(
+    #     model,
+    #     include_backward=False,          # set True if you also suspect grads
+    #     only_modules_with_params=False,  # set True to reduce noise
+    # )
 
     optimizer = optim.AdamW(
         model.parameters(),
@@ -323,6 +335,8 @@ def main():
             f"Accuracy: {acc:.4f}"
         )
 
+    total_time = time.perf_counter() - run_start
+    print(f"Total training time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
 
 if __name__ == "__main__":
     main()

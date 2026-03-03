@@ -19,6 +19,87 @@ def _check_finite(t: torch.Tensor, tag: str):
             f"bad_count={(~torch.isfinite(t)).sum().item()}"
         )
 
+class LorentzPatchEmbeddings(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.image_size = config["image_size"]
+        self.patch_size = config["patch_size"]
+        self.num_channels = config["num_channels"]
+        self.hidden_size = config["hidden_size"]
+
+        self.manifold = config["manifold"]
+
+        assert self.image_size % self.patch_size == 0, "image_size must be divisible by patch_size"
+        self.grid_size = self.image_size // self.patch_size
+        self.num_patches = self.grid_size * self.grid_size
+
+        patch_dim = self.patch_size * self.patch_size * self.num_channels
+        self.projection = LorentzFullyConnected(
+            in_features=patch_dim + 1, 
+            out_features=self.hidden_size + 1,
+            manifold=config["manifold"],
+            reset_params=config.get("reset_params", "lorentz_kaiming"),
+            a_default=config.get("a_default", 0.0)
+        )
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        if H != self.image_size or W != self.image_size:
+            raise ValueError(f"Expected {(self.image_size, self.image_size)} but got {(H, W)}")
+
+        p = self.patch_size
+        x = x.reshape(B, C, self.grid_size, p, self.grid_size, p)   # [B, C, Gh, p, Gw, p]
+        x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
+        x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
+
+        # add time component for Lorentz input
+        time = torch.zeros_like(x[..., :1])         # [B, N, 1]
+        x_amb = torch.cat((time, x), dim=-1)        # [B, N, patch_dim+1]
+        x_lor = self.manifold.projx(x_amb, dim=-1)  # [B, N, patch_dim+1]
+
+        # project to hidden size
+        x_lor = self.projection(x_amb)              # [B, N, hidden_size+1]
+        return x_lor
+
+
+class LorentzEmbeddings(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.patch_embeddings = LorentzPatchEmbeddings(config)
+        self.final_op = config.get("final_op", "pooling") # "cls" or "pooling"
+
+        self.manifold = config["manifold"]
+
+        if self.final_op == "cls":
+            # create learnable cls token
+            self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"] + 1))
+            n_tokens = self.patch_embeddings.num_patches + 1
+        elif self.final_op == "pooling":
+            self.cls_token = None
+            n_tokens = self.patch_embeddings.num_patches
+        else:
+            raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
+
+        self.pos_space = nn.Parameter(torch.randn(1, n_tokens, config["hidden_size"] + 1))
+        self.dropout = nn.Dropout(config["dropout_rate"]) #TODO: lorentz dropout
+
+    def forward(self, x):
+        x = self.patch_embeddings(x)
+        batch_size = x.shape[0]
+
+        if self.final_op == "cls":
+            cls = self.cls_token.expand(batch_size, -1, -1)   # [B, 1, D]
+            x = torch.cat((cls, x), dim=1)           # [B, 1+P, D]
+
+        # move pos emb to manifold
+        time = torch.zeros_like(self.pos_space[..., :1])        # [1, N, 1]
+        pos_amb = torch.cat((time, self.pos_space), dim=-1)
+        pos_lor = self.manifold.projx(pos_amb, dim=-1)          # [1, N, D]
+
+        x = self.manifold.gyro_add(x, pos_lor)                  # [B, N, D]
+        return x
+
 class PatchEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -27,16 +108,42 @@ class PatchEmbeddings(nn.Module):
         self.num_channels = config["num_channels"]
         self.hidden_size = config["hidden_size"]
 
-        # calculate number of patches
-        self.num_patches = (self.image_size // self.patch_size) ** 2
+        assert self.image_size % self.patch_size == 0, "image_size must be divisible by patch_size"
+        self.grid_size = self.image_size // self.patch_size
+        self.num_patches = self.grid_size * self.grid_size
 
-        # projection layer
-        self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
+        self.patch_embed_type = config.get("patch_embed_type", "linear")  # "conv" or "linear"
+
+        if self.patch_embed_type == "conv":
+            self.projection = nn.Conv2d(
+                self.num_channels,
+                self.hidden_size,
+                kernel_size=self.patch_size,
+                stride=self.patch_size,
+                bias=True,
+            )
+        elif self.patch_embed_type == "linear":
+            patch_dim = self.patch_size * self.patch_size * self.num_channels
+            # insert time component
+            self.projection = nn.Linear(patch_dim, self.hidden_size, bias=True)
+        else:
+            raise ValueError(f"Invalid patch_embed_type: {self.patch_embed_type}. Use 'conv' or 'linear'.")
 
     def forward(self, x):
-        # (batch_size, num_channels, image_size, image_size) -> (batch_size, num_patches, hidden_size)
-        x = self.projection(x)
-        x = x.flatten(2).transpose(1, 2)
+        B, C, H, W = x.shape
+        if H != self.image_size or W != self.image_size:
+            raise ValueError(f"Expected {(self.image_size, self.image_size)} but got {(H, W)}")
+
+        if self.patch_embed_type == "conv":
+            x = self.projection(x)              # [B, D, Gh, Gw]
+            x = x.flatten(2).transpose(1, 2)    # [B, N, D]
+            return x
+
+        p = self.patch_size
+        x = x.reshape(B, C, self.grid_size, p, self.grid_size, p)   # [B, C, Gh, p, Gw, p]
+        x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
+        x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
+        x = self.projection(x)                                      # [B, N, D]
         return x
     
 
@@ -45,20 +152,21 @@ class Embeddings(nn.Module):
         super().__init__()
         self.config = config
         self.patch_embeddings = PatchEmbeddings(config)
-        self.final_op = config.get("final_op", "cls") # "cls" or "mean"
+        self.final_op = config.get("final_op", "pooling") # "cls" or "pooling"
 
         if self.final_op == "cls":
             # create learnable cls token
             self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"]))
             n_tokens = self.patch_embeddings.num_patches + 1
-        elif self.final_op == "midpoint":
+        elif self.final_op == "pooling":
             self.cls_token = None
             n_tokens = self.patch_embeddings.num_patches
         else:
-            raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'midpoint'.")
+            raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
         # create learnable position embeddings
         self.position_embeddings = nn.Parameter(torch.randn(1, n_tokens, config["hidden_size"]))
+        # change to manifold aware
         self.dropout = nn.Dropout(config["dropout_rate"])
 
     def forward(self, x):
@@ -126,7 +234,7 @@ class LorentzTransformerBlock(nn.Module):
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
 
-        self._debug = True
+        self._debug = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self._debug: _check_finite(x, "block.in")
@@ -173,10 +281,16 @@ class LorentzEncoder(nn.Module):
 class LorentzViT(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.embedding = Embeddings(config)
         self.encoder = LorentzEncoder(config)
         self.manifold = config["manifold"]
-        self.final_op = config.get("final_op", "cls") # "cls" or "midpoint"
+        self.final_op = config.get("final_op", "pooling") # "cls" or "pooling"
+        self.embedding_space = config.get("embeddings", "lorentz")
+
+        if self.embedding_space == "euclidean":
+            self.embedding = Embeddings(config)
+        elif self.embedding_space == "lorentz":
+            self.embedding = LorentzEmbeddings(config)
+
         self.classifier = LorentzFullyConnected(
             in_features=config["hidden_size"] + 1,      
             out_features=config["num_classes"] + 1,    
@@ -190,17 +304,21 @@ class LorentzViT(nn.Module):
         print(f"Initialized LorentzViT with curvature k={self.k}")
 
         self.pre_ln = nn.LayerNorm(config["hidden_size"], elementwise_affine=True)
-        self.pre_scale = nn.Parameter(torch.tensor(0.1))
+        self.pre_scale = nn.Parameter(torch.tensor(0.3))
+        self.r_logit = nn.Parameter(torch.tensor(1.0))
+
+    def learned_radius(self):
+        return F.softplus(self.r_logit) + 1e-6
 
     def pool_tokens(self, x: torch.Tensor) -> torch.Tensor:
         if self.final_op == "cls":
             patches = x[:, 1:, :]   # [B, P, D]
             cls = x[:, 0, :]        # [B, D]
             return cls  
-        elif self.final_op == "midpoint":
+        elif self.final_op == "pooling":
             return self.manifold.lorentz_midpoint(x)  # [B, D]
         else:
-            raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'midpoint'.")
+            raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
     @staticmethod
     def _lorentz_util_metrics(x_lor: torch.Tensor, k: float, eps: float = 1e-6) -> dict:
@@ -219,7 +337,6 @@ class LorentzViT(nn.Module):
 
             sqrt_k = float(k) ** 0.5
 
-            # Correct acosh argument
             arg = (sqrt_k * x0).clamp_min(1.0 + eps)
 
             r = torch.acosh(arg) / sqrt_k
@@ -234,25 +351,39 @@ class LorentzViT(nn.Module):
                 "r_p95": torch.quantile(r.flatten(), 0.95).item(),
             }
 
-    def print_stats(self, name, t):
+    @staticmethod
+    def print_stats(name, t):
         t = t.detach()
         print(f"{name}: mean={t.mean().item():.4f}, std={t.std(unbiased=True).item():.4f}, "
             f"p95={torch.quantile(t.flatten(), 0.95).item():.4f}, max={t.max().item():.4f}")
+    
+    @staticmethod
+    def clamp_euclidean_radius(x: torch.Tensor, r_max: float, eps: float = 1e-6):
+        norm = x.norm(dim=-1, keepdim=True)
+        scale = (r_max / norm.clamp_min(eps)).clamp_max(1.0)
+        return x * scale
 
     def forward(self, x: torch.Tensor, return_metrics: bool = False):
         metrics = {} if return_metrics else None
 
-        x_euc = self.embedding(x)                    # [B, N, d]
+        if self.embedding_space == "euclidean":
+            x_euc = self.embedding(x)                    # [B, N, d]
 
-        # x_euc = self.pre_ln(x_euc) * self.pre_scale  # [B, N, d]
+            # clamp radius (optional to just set to any number)
+            r_max = self.learned_radius()
+            x_euc = self.clamp_euclidean_radius(x_euc, r_max) 
 
-        # L2 normalization
-        x_euc = x_euc / (x_euc.norm(dim=-1, keepdim=True).clamp_min(1e-6))
+            # pre-layernorm and scaling
+            # x_euc = self.pre_ln(x_euc) * self.pre_scale  # [B, N, d]
 
-        # t = x_euc.norm(dim=-1) 
-        # self.print_stats("pre_expmap0_token_norm", t)
+            # t = x_euc.norm(dim=-1) 
+            # self.print_stats("pre_expmap0_token_norm", t)
 
-        x_lor0 = self.manifold.expmap0(x_euc)        # [B, N, D]
+            x_lor0 = self.manifold.expmap0(x_euc)        # [B, N, D]
+
+        elif self.embedding_space == "lorentz":
+            x_lor0 = self.embedding(x)                    # [B, N, D]
+        
         if return_metrics:
             metrics["after_expmap0"] = self._lorentz_util_metrics(x_lor0, self.k)
 
