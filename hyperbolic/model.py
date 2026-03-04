@@ -82,7 +82,7 @@ class LorentzEmbeddings(nn.Module):
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
         self.pos_space = nn.Parameter(torch.randn(1, n_tokens, config["hidden_size"] + 1))
-        self.dropout = nn.Dropout(config["dropout_rate"]) #TODO: lorentz dropout
+        self.dropout = LorentzDropout(config)
 
     def forward(self, x):
         x = self.patch_embeddings(x)
@@ -98,7 +98,35 @@ class LorentzEmbeddings(nn.Module):
         pos_lor = self.manifold.projx(pos_amb, dim=-1)          # [1, N, D]
 
         x = self.manifold.gyro_add(x, pos_lor)                  # [B, N, D]
+        x = self.dropout(x)
         return x
+
+class LorentzDropout(nn.Module):
+    """
+    Lorentz dropout via 'mask & project'.
+    Shi, et al. (Intrinsic)
+    """
+    def __init__(self, config):
+        super().__init__()
+        self.manifold = config["manifold"]
+        self.dropout_rate = config["dropout_rate"]
+        self.eps = 1e-6
+        self.drop_time = False
+
+    def forward(self, x):
+        if (not self.training) or self.dropout_rate == 0.0:
+            return x
+        if x.size(-1) < 2:
+            raise ValueError("LorentzDropout expects last dim to be (1+d) >= 2")
+
+        keep_prob = 1.0 - self.dropout_rate
+        mask = torch.empty_like(x).bernoulli_(keep_prob)
+        if not self.drop_time:
+            mask[..., 0] = 1.0
+
+        x_tilde = x * mask / (keep_prob + self.eps)
+        x_dropped = self.manifold.projx(x_tilde, dim=-1)
+        return x_dropped
 
 class PatchEmbeddings(nn.Module):
     def __init__(self, config):
@@ -370,8 +398,8 @@ class LorentzViT(nn.Module):
             x_euc = self.embedding(x)                    # [B, N, d]
 
             # clamp radius (optional to just set to any number)
-            r_max = self.learned_radius()
-            x_euc = self.clamp_euclidean_radius(x_euc, r_max) 
+            # r_max = self.learned_radius()
+            # x_euc = self.clamp_euclidean_radius(x_euc, r_max) 
 
             # pre-layernorm and scaling
             # x_euc = self.pre_ln(x_euc) * self.pre_scale  # [B, N, d]
@@ -381,11 +409,16 @@ class LorentzViT(nn.Module):
 
             x_lor0 = self.manifold.expmap0(x_euc)        # [B, N, D]
 
+            if return_metrics:
+                metrics["after_expmap0"] = self._lorentz_util_metrics(x_lor0, self.k)
+
         elif self.embedding_space == "lorentz":
             x_lor0 = self.embedding(x)                    # [B, N, D]
+
+            if return_metrics:
+                metrics["after_embedding"] = self._lorentz_util_metrics(x_lor0, self.k)
         
-        if return_metrics:
-            metrics["after_expmap0"] = self._lorentz_util_metrics(x_lor0, self.k)
+        # print("Embedding on manifold", self.manifold._is_on_manifold(x_lor0))
 
         x_lor = self.encoder(x_lor0)                 # [B, N, D]
         if return_metrics:

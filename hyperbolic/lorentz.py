@@ -116,6 +116,12 @@ class Lorentz(nn.Module):
         xv = self.inner(x, v, keepdim=True, dim=dim)          # [..., 1]
         return v + xv * (x / self.k())
 
+    def stats(self, name, t):
+        any_nan = torch.isnan(t).any().item()
+        if any_nan:
+            print(f"{name}: min={t.min().item():.4e}, max={t.max().item():.4e}, "
+                f"mean={t.mean().item():.4e}, any_nan={torch.isnan(t).any().item()}")
+
     def logmap(self, base_point: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """
         Logarithmic map for the Lorentz model at an arbitrary base point.
@@ -130,17 +136,25 @@ class Lorentz(nn.Module):
 
         # Lorentz inner <bp, y>_L (keepdim False here, then unsqueeze)
         inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
+        self.stats("inner", inner)
 
         # alpha = -k * <bp, y>_L  (should be >= 1)
-        alpha = (-k * inner).clamp_min(1.0 + 1e-6)
+        alpha = (-k * inner)
+        self.stats("alpha_raw", alpha)
+        alpha = alpha.clamp_min(1.0 + 1e-6)
+        self.stats("alpha_clamped", alpha)
 
         # direction = y - alpha * bp  (tangent at bp)
         direction = y - alpha.unsqueeze(-1) * bp
+        self.stats("direction", direction)
 
         # denom = sqrt(alpha^2 - 1)
         denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
+        self.stats("denom", denom)
 
         factor = torch.acosh(alpha) / denom
+        self.stats("factor", factor)
+
         v = factor.unsqueeze(-1) * direction
 
         return v.to(x.dtype)
