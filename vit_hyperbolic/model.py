@@ -233,11 +233,10 @@ class LorentzTransformerBlock(nn.Module):
 
         if self.skip_connection:
             if self.use_midpoint:
-                print("Using midpoint after attention")
                 alpha = float(self.res_scale_att)
                 xs2 = torch.stack([x, att_output], dim=-2)
                 w2 = torch.tensor([1.0 - alpha, alpha], device=x.device, dtype=x.dtype)
-                x = self.manifold.lorentz_midpoint(xs2, w2, dim=-2)
+                x = self.manifold.lorentz_midpoint(xs2, w2)
             else:
                 x = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
         else:
@@ -246,9 +245,13 @@ class LorentzTransformerBlock(nn.Module):
         mlp_output = self.mlp(x)
 
         if self.skip_connection:
-            mlp_output = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
             if self.use_midpoint:
-                mlp_output = self.manifold.lorentz_midpoint(x, mlp_output)
+                alpha = float(self.res_scale_mlp)
+                xs2 = torch.stack([x, mlp_output], dim=-2)
+                w2 = torch.tensor([1.0 - alpha, alpha], device=x.device, dtype=x.dtype)
+                mlp_output = self.manifold.lorentz_midpoint(xs2, w2)
+            else:
+                mlp_output = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
 
         return mlp_output
 
@@ -338,7 +341,7 @@ class LorentzViT(nn.Module):
                 "r_std": r.std(unbiased=True).item(),
                 "xs_norm_mean": xs_norm.mean().item(),
                 "xs_norm_std": xs_norm.std(unbiased=True).item(),
-                "r_p95": torch.quantile(r.flatten(), 0.95).item(),
+                # "r_p95": torch.quantile(r.flatten(), 0.95).item(),
             }
 
     @staticmethod
@@ -360,12 +363,12 @@ class LorentzViT(nn.Module):
             x_lor0 = self.manifold.expmap0(x_euc)       # [B, N, D]
 
             if return_metrics:
-                metrics["after_expmap0"] = self._lorentz_util_metrics(x_lor0, self.k)
+                metrics["after_embedding (expmap0)"] = self._lorentz_util_metrics(x_lor0, self.k)
 
         elif self.embedding_space == "lorentz":
             x_lor0 = self.embedding(x)                  # [B, N, D]
             if return_metrics:
-                metrics["after_embedding"] = self._lorentz_util_metrics(x_lor0, self.k)
+                metrics["after_embedding (lorentz)"] = self._lorentz_util_metrics(x_lor0, self.k)
         
         x_lor = self.encoder(x_lor0)                    # [B, N, D]
         if return_metrics:

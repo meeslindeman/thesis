@@ -39,3 +39,4 @@ class LorentzLayerNorm(nn.Module):
         self.manifold = config["manifold"]
 
     def forward(self, x):
+        pass
