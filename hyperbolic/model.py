@@ -56,9 +56,11 @@ class LorentzPatchEmbeddings(nn.Module):
         time = torch.zeros_like(x[..., :1])         # [B, N, 1]
         x_amb = torch.cat((time, x), dim=-1)        # [B, N, patch_dim+1]
         x_lor = self.manifold.projx(x_amb, dim=-1)  # [B, N, patch_dim+1]
+        # self.manifold._is_on_manifold(x_lor, "patch embedding input")
 
         # project to hidden size
-        x_lor = self.projection(x_amb)              # [B, N, hidden_size+1]
+        x_lor = self.projection(x_lor)              # [B, N, hidden_size+1]
+        # self.manifold._is_on_manifold(x_lor, "patch embedding after projection")
         return x_lor
 
 
@@ -81,7 +83,8 @@ class LorentzEmbeddings(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        self.pos_space = nn.Parameter(torch.randn(1, n_tokens, config["hidden_size"] + 1))
+        init = 1e-3
+        self.pos_space = nn.Parameter(init * torch.randn(1, n_tokens, config["hidden_size"]))
         self.dropout = LorentzDropout(config)
 
     def forward(self, x):
@@ -93,12 +96,15 @@ class LorentzEmbeddings(nn.Module):
             x = torch.cat((cls, x), dim=1)           # [B, 1+P, D]
 
         # move pos emb to manifold
-        time = torch.zeros_like(self.pos_space[..., :1])        # [1, N, 1]
-        pos_amb = torch.cat((time, self.pos_space), dim=-1)
-        pos_lor = self.manifold.projx(pos_amb, dim=-1)          # [1, N, D]
+        # time = torch.zeros_like(self.pos_space[..., :1])        # [1, N, 1]
+        # pos_amb = torch.cat((time, self.pos_space), dim=-1)     # [1, N, hidden_size+1]
+        # pos_lor = self.manifold.projx(pos_amb, dim=-1)          # [1, N, hidden_size+1]
+        pos_lor = self.manifold.expmap0(self.pos_space)
+        # self.manifold._is_on_manifold(pos_lor, "position embedding on manifold")
 
         x = self.manifold.gyro_add(x, pos_lor)                  # [B, N, D]
-        x = self.dropout(x)
+        # self.manifold._is_on_manifold(x, "after adding pos emb")
+        # x = self.dropout(x)
         return x
 
 class LorentzDropout(nn.Module):
@@ -265,14 +271,22 @@ class LorentzTransformerBlock(nn.Module):
         self._debug = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self._debug: _check_finite(x, "block.in")
+        if self._debug: 
+            _check_finite(x, "block.in")
+
+
+        # self.manifold._is_on_manifold(x, "input x")
 
         att_output = self.attention(x)
-        if self._debug: _check_finite(att_output, "block.attention.out")
+        if self._debug: 
+            _check_finite(att_output, "block.attention.out")
 
         if self.skip_connection:
+            # print("===== ATTENTION RESIDUAL =====")
+            # self.manifold._is_on_manifold(att_output, "att_output")
             x2 = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
-            if self._debug: _check_finite(x2, "block.residual1(out of geodesic_residual)")
+            if self._debug: 
+                _check_finite(x2, "block.residual1(out of geodesic_residual)")
             x = x2
         else:
             x = att_output
@@ -283,12 +297,15 @@ class LorentzTransformerBlock(nn.Module):
         if self._debug: _check_finite(mlp_output, "block.mlp.out")
 
         if self.skip_connection:
+            # print("===== MLP RESIDUAL =====")    
+            # self.manifold._is_on_manifold(att_output, "mlp_output")
             y = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
-            # TODO: maybe look at step size here
-            if self._debug: _check_finite(y, "block.residual2(out of geodesic_residual)")
+            if self._debug: 
+                _check_finite(y, "block.residual2(out of geodesic_residual)")
             mlp_output = y
 
-        if self._debug: _check_finite(mlp_output, "block.out")
+        if self._debug: 
+            _check_finite(mlp_output, "block.out")
         return mlp_output
 
 
@@ -418,7 +435,7 @@ class LorentzViT(nn.Module):
             if return_metrics:
                 metrics["after_embedding"] = self._lorentz_util_metrics(x_lor0, self.k)
         
-        # print("Embedding on manifold", self.manifold._is_on_manifold(x_lor0))
+        # self.manifold._is_on_manifold(x_lor0, "input to encoder")
 
         x_lor = self.encoder(x_lor0)                 # [B, N, D]
         if return_metrics:
