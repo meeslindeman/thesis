@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from hyperbolic.lorentz import Lorentz
-from hyperbolic.model import LorentzViT
+from vit_experimental.lorentz import Lorentz
+from vit_experimental.model import LorentzViT
 
 import traceback
 from contextlib import contextmanager

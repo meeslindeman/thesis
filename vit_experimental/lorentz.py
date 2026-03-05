@@ -97,12 +97,12 @@ class Lorentz(nn.Module):
         v_time = torch.zeros_like(y_time)   # [...,1]
         return torch.cat([v_time, v_space], dim=-1)  # [...,1+D]
 
-    def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
+    def projection_space_orthogonal(self, x: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """
         Projects a point onto the Lorentz model orthogonally from the space dimensions.
         """
         return torch.cat(
-            [torch.sqrt(1 / self.k() + x.pow(2).sum(dim=manifold_dim, keepdim=True)), x], dim=manifold_dim
+            [torch.sqrt(1 / self.k() + x.pow(2).sum(dim=dim, keepdim=True)), x], dim=dim
         )
 
     def projx(self, x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:

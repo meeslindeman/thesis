@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Literal
 
-from hyperbolic.lorentz import Lorentz
+from vit_experimental.lorentz import Lorentz
 from layers.LLinear import LorentzFullyConnected
 
 HeadMode = Literal["full_midpoint", "split_concat"]

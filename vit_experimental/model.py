@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from hyperbolic.lorentz import Lorentz
-from hyperbolic.attention import LorentzMHA, LorentzMHAEfficient
+from vit_experimental.lorentz import Lorentz
+from vit_experimental.attention import LorentzMHA, LorentzMHAEfficient
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -56,6 +56,10 @@ class LorentzPatchEmbeddings(nn.Module):
         time = torch.zeros_like(x[..., :1])         # [B, N, 1]
         x_amb = torch.cat((time, x), dim=-1)        # [B, N, patch_dim+1]
         x_lor = self.manifold.projx(x_amb, dim=-1)  # [B, N, patch_dim+1]
+        # print(f"Patch embedding input: mean={x_lor.mean().item():.4f}, std={x_lor.std(unbiased=True).item():.4f}")
+
+        x_lor2 = self.manifold.projection_space_orthogonal(x, )
+        # print(f"Patch embedding orthogonal projection: mean={x_lor2.mean().item():.4f}, std={x_lor2.std(unbiased=True).item():.4f}")
         # self.manifold._is_on_manifold(x_lor, "patch embedding input")
 
         # project to hidden size
@@ -83,8 +87,13 @@ class LorentzEmbeddings(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        init = 1e-3
-        self.pos_space = nn.Parameter(init * torch.randn(1, n_tokens, config["hidden_size"]))
+        # init = 3e-3
+        # self.pos_space = nn.Parameter(init * torch.randn(1, n_tokens, config["hidden_size"]))
+
+        pos = torch.randn(1, n_tokens, config["hidden_size"])
+        pos = pos / pos.norm(dim=-1, keepdim=True)
+        self.pos_space = nn.Parameter(pos)  # [1, N, d]
+
         self.dropout = LorentzDropout(config)
 
     def forward(self, x):
