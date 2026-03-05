@@ -191,20 +191,22 @@ class Lorentz(nn.Module):
         space = xs[..., 1:].reshape(*xs.shape[:-2], -1)
         return torch.cat([time, space], dim=-1)
 
-    def lorentz_midpoint(self, xs: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Lorentz midpoint by normalizing weighted ambient sum."""
-        if weights is None:
-            numerator = xs.sum(dim=-2)
+    def lorentz_midpoint(self, xs: torch.Tensor, w: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Lorentz barycenter via normalized weighted ambient sum over the set axis (-2)."""
+        if w is None:
+            num = xs.sum(dim=-2)
         else:
-            numerator = weights @ xs
+            num = w @ xs  # supports (...,Nq,Nk)@(....,Nk,D)->(...,Nq,D) and (...,1,Nk)@(...,Nk,D)->(...,1,D)
+            # if you used a singleton-query dimension (like (...,1,Nk)), you may want to squeeze it:
+            if num.size(-2) == 1:
+                num = num.squeeze(-2)
 
-        t = numerator[..., :1]
-        s = numerator[..., 1:]
+        t = num[..., :1]
+        s = num[..., 1:]
         denom_sq = (t * t) - (s * s).sum(dim=-1, keepdim=True)
         denom_sq = denom_sq.clamp_min(self.eps)
-
         denom = torch.sqrt(denom_sq) * torch.sqrt(self.k())
-        return numerator / denom
+        return num / denom
 
     def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
         """Residual: Exp_x( weight * Log_x(y) )."""

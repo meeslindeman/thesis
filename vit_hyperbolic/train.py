@@ -28,31 +28,6 @@ def main():
 
     device = torch.device(cfg.device)
 
-    # model_cfg = {
-    #     "patch_size": cfg.patch_size,
-    #     "hidden_size": cfg.hidden_size,
-    #     "num_hidden_layers": cfg.num_hidden_layers,
-    #     "num_attention_heads": cfg.num_attention_heads,
-    #     "mlp_dim": cfg.mlp_dim,
-    #     "dropout_rate": cfg.dropout_rate,
-    #     "initializer_range": cfg.initializer_range,
-    #     "image_size": cfg.image_size,
-    #     "num_classes": cfg.num_classes,
-    #     "num_channels": cfg.num_channels,
-    #     "qkv_bias": cfg.qkv_bias,
-    #     "curvature": cfg.curvature,
-    #     "manifold": Lorentz(cfg.curvature),
-    #     "head_mode": cfg.head_mode,
-    #     "concat_mode": cfg.concat_mode,
-    #     "compute_scores": cfg.compute_scores,
-    #     "reset_params": cfg.reset_params,
-    #     "a_default": cfg.a_default,
-    #     "skip_connection": cfg.skip_connection,
-    #     "final_op": cfg.final_op,
-    #     "embeddings": cfg.embeddings,
-    #     "patch_embed_type": cfg.patch_embed_type,
-    # }
-
     model_cfg = asdict(cfg)
     model_cfg["manifold"] = Lorentz(cfg.curvature)
     

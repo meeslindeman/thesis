@@ -248,7 +248,7 @@ class LorentzMHA(nn.Module):
 
         # Lorentz-valued aggregation (per head)
         # [B, H, N, D_head]
-        out_heads = self.manifold.lorentz_midpoint(v, attn) 
+        out_heads = self.manifold.lorentz_midpoint(v, attn)  # [B, H, N, D_head]
         
         # Fuse heads into a single Lorentz representation of full dim D = 1 + d
         if self.num_heads == 1:

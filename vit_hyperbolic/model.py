@@ -5,7 +5,7 @@ import numpy as np
 
 from vit_hyperbolic.lorentz import Lorentz
 from vit_hyperbolic.attention import LorentzMHA
-# from vit_hyperbolic.lorentz_utils import LorentzDropout
+from vit_hyperbolic.lorentz_utils import LorentzDropout
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -42,7 +42,7 @@ class LorentzPatchEmbeddings(nn.Module):
         x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
         x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
 
-        # insert time component
+        # compute time component
         x_lor = self.manifold.projection_space_orthogonal(x, manifold_dim=-1)   # [B, N, patch_dim+1]
 
         # project to hidden size
@@ -72,7 +72,7 @@ class LorentzEmbeddings(nn.Module):
         pos = pos / pos.norm(dim=-1, keepdim=True)
         self.pos_space = nn.Parameter(pos)
 
-        # self.dropout = LorentzDropout(config)
+        self.dropout = LorentzDropout(config)
 
     def forward(self, x):
         x = self.patch_embeddings(x)
@@ -156,8 +156,12 @@ class Embeddings(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        # create learnable position embeddings
-        self.position_embeddings = nn.Parameter(torch.randn(1, n_tokens, config["hidden_size"]))
+        # create learnable position embeddings with controlled radius
+        radius = 1.0
+        pos = torch.randn(1, n_tokens, config["hidden_size"])
+        pos = pos / pos.norm(dim=-1, keepdim=True) * radius
+        self.position_embeddings = nn.Parameter(pos)
+
         self.dropout = nn.Dropout(config["dropout_rate"])
 
     def forward(self, x):
@@ -203,6 +207,7 @@ class LorentzTransformerBlock(nn.Module):
         super().__init__()
         self.manifold = config["manifold"]
         self.skip_connection = config["skip_connection"]
+        self.use_midpoint = config["use_midpoint"]
         
         d = config["hidden_size"]          # spatial dim
         D = d + 1                          # lorentz dim
@@ -216,7 +221,7 @@ class LorentzTransformerBlock(nn.Module):
             concat_mode=config["concat_mode"],
             reset_params=config["reset_params"],
             a_default=config["a_default"],
-            attn_mask=config["attn_mask"],
+            attn_mask=config.get("attn_mask", None)
         )
 
         self.mlp = LorentzMLP(config)
@@ -227,7 +232,14 @@ class LorentzTransformerBlock(nn.Module):
         att_output = self.attention(x)
 
         if self.skip_connection:
-            x = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
+            if self.use_midpoint:
+                print("Using midpoint after attention")
+                alpha = float(self.res_scale_att)
+                xs2 = torch.stack([x, att_output], dim=-2)
+                w2 = torch.tensor([1.0 - alpha, alpha], device=x.device, dtype=x.dtype)
+                x = self.manifold.lorentz_midpoint(xs2, w2, dim=-2)
+            else:
+                x = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
         else:
             x = att_output
 
@@ -235,6 +247,8 @@ class LorentzTransformerBlock(nn.Module):
 
         if self.skip_connection:
             mlp_output = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
+            if self.use_midpoint:
+                mlp_output = self.manifold.lorentz_midpoint(x, mlp_output)
 
         return mlp_output
 

@@ -1,3 +1,6 @@
+import torch
+import torch.nn as nn
+
 # insert dropout, layernorm, etc
 
 class LorentzDropout(nn.Module):
@@ -25,3 +28,14 @@ class LorentzDropout(nn.Module):
         x_tilde = x * mask / (keep_prob + self.eps)
         x_dropped = self.manifold.projx(x_tilde, dim=-1)
         return x_dropped
+
+
+class LorentzLayerNorm(nn.Module):
+    """
+    Lorentz layer normalization.
+    """
+    def __init__(self, config):
+        super().__init__()
+        self.manifold = config["manifold"]
+
+    def forward(self, x):

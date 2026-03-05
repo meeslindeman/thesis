@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from vit_experimental.lorentz import Lorentz
-from vit_experimental.attention import LorentzMHA, LorentzMHAEfficient
+from vit_experimental.attention import LorentzMHA
 from layers.LLinear import LorentzFullyConnected
 
 

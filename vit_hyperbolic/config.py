@@ -31,6 +31,7 @@ class Config:
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
     embeddings: str = "lorentz"
+    use_midpoint: bool = False
 
     # hyperbolic specifics
     curvature: float = 0.1
