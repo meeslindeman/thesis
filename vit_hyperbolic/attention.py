@@ -119,27 +119,6 @@ class LorentzMHA(nn.Module):
             self.register_buffer("log_radius_scale", s_val)
         
     @staticmethod
-    def _minkowski_norm_sq(x: torch.Tensor) -> torch.Tensor:
-        time = x[..., :1]   
-        space = x[..., 1:] 
-        norm_sq = -time * time + torch.sum(space * space, dim=-1, keepdim=True)
-        return norm_sq
-
-    def _is_on_manifold(self, x: torch.Tensor, manifold: Lorentz, tol: float = 1e-4, log_details: bool = False) -> bool:
-        k_val = manifold.k().item()
-        target = -1.0 / k_val
-
-        norm_sq = self._minkowski_norm_sq(x)
-        diff = norm_sq - target
-        max_diff = diff.abs().max().item()
-
-        if log_details:
-            print("[manifold check] k=%.6f", k_val)
-            print("  target Minkowski norm = %.6f", target)
-            print("  max |<x,x>_L - target| = %.6e", max_diff)
-        return max_diff < tol
-        
-    @staticmethod
     def _lorentz_inner(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x_t, x_x = x[..., :1], x[..., 1:]  # [B, H, N, 1], [B, H, N, head_spatial_dim]
         y_t, y_x = y[..., :1], y[..., 1:]  # [B, H, N, 1], [B, H, N, head_spatial_dim]

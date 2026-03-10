@@ -5,7 +5,7 @@ import numpy as np
 
 from vit_hyperbolic.lorentz import Lorentz
 from vit_hyperbolic.attention import LorentzMHA
-from vit_hyperbolic.lorentz_utils import LorentzDropout
+from vit_hyperbolic.lorentz_utils import LorentzDropout, LorentzLayerNorm
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -208,6 +208,7 @@ class LorentzTransformerBlock(nn.Module):
         self.manifold = config["manifold"]
         self.skip_connection = config["skip_connection"]
         self.use_midpoint = config["use_midpoint"]
+        self.use_layer_norm = config["use_layer_norm"]
         
         d = config["hidden_size"]          # spatial dim
         D = d + 1                          # lorentz dim
@@ -225,10 +226,16 @@ class LorentzTransformerBlock(nn.Module):
         )
 
         self.mlp = LorentzMLP(config)
+        self.layernorm1 = LorentzLayerNorm(manifold=self.manifold, dim=d)
+        self.layernorm2 = LorentzLayerNorm(manifold=self.manifold, dim=d)
+
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.use_layer_norm:
+            x = self.layernorm1(x)
+
         att_output = self.attention(x)
 
         if self.skip_connection:
@@ -242,6 +249,8 @@ class LorentzTransformerBlock(nn.Module):
         else:
             x = att_output
 
+        if self.use_layer_norm:
+            x = self.layernorm2(x)
         mlp_output = self.mlp(x)
 
         if self.skip_connection:

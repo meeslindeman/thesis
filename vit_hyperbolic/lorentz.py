@@ -58,6 +58,23 @@ class Lorentz(nn.Module):
             v = u
         return self.inner(u, v, keepdim=True, dim=dim)
 
+    def lorentz_distance(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        """Lorentz distance: d(x,y) = (1/sqrt(k)) * arcosh(-k <x,y>_L)."""
+        k = self.k().to(dtype=x.dtype, device=x.device)
+        ip = self.inner(x, y, keepdim=True, dim=dim)                  # [..., 1]
+        alpha = (-k * ip).clamp_min(1.0 + self.eps)                   # domain for acosh
+        return torch.acosh(alpha) / torch.sqrt(k)
+
+    def lorentz_distance2(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
+        """
+        Squared geodesic distance: d_L(x,y)^2 = acosh( -k <x,y>_L )^2 / k
+        """
+        k = self.k().to(dtype=x.dtype, device=x.device)
+        ip = self.inner(x, y, keepdim=True, dim=dim)                  # [..., 1]
+        alpha = (-k * ip).clamp_min(1.0 + self.eps)
+        ac = torch.acosh(alpha)
+        return (ac * ac) / k
+
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
         """Project space coords x to the hyperboloid by solving time from constraint."""
         k = self.k()
@@ -99,6 +116,32 @@ class Lorentz(nn.Module):
 
         # sinh(arg)/arg -> 1 as arg->0
         factor = torch.where(is_zero, torch.ones_like(norm_x), torch.sinh(arg) / arg)
+        space = factor * x
+        return torch.cat([time, space], dim=-1)
+
+    def expmap0_safe(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Exponential map at the origin with a zero-norm safeguard.
+
+        Uses a Taylor approximation of sinh(arg)/arg when ||x|| ≈ 0 to avoid
+        the removable 0/0 singularity and NaN gradients, while matching the
+        standard exponential map elsewhere.
+        """
+        k = self.k()
+        sqrt_k = torch.sqrt(k)
+
+        norm_x = torch.norm(x, dim=-1, keepdim=True)
+        arg = sqrt_k * norm_x
+
+        time = (1.0 / sqrt_k) * torch.cosh(arg)
+
+        # sinh(arg)/arg -> 1 as arg->0
+        small = arg < 1e-4
+        arg2 = arg * arg
+        factor_small = 1.0 + arg2 / 6.0 + arg2 * arg2 / 120.0
+        factor_large = torch.sinh(arg) / torch.clamp(arg, min=1e-8)
+        factor = torch.where(small, factor_small, factor_large)
+        
         space = factor * x
         return torch.cat([time, space], dim=-1)
 
@@ -197,16 +240,22 @@ class Lorentz(nn.Module):
             num = xs.sum(dim=-2)
         else:
             num = w @ xs  # supports (...,Nq,Nk)@(....,Nk,D)->(...,Nq,D) and (...,1,Nk)@(...,Nk,D)->(...,1,D)
-            # if you used a singleton-query dimension (like (...,1,Nk)), you may want to squeeze it:
+            # if you used a singleton-query dimension (like (...,1,Nk)), squeeze it:
             if num.size(-2) == 1:
                 num = num.squeeze(-2)
 
         t = num[..., :1]
         s = num[..., 1:]
         denom_sq = (t * t) - (s * s).sum(dim=-1, keepdim=True)
-        denom_sq = denom_sq.clamp_min(self.eps)
+        denom_sq = denom_sq.clamp_min(self.eps) 
         denom = torch.sqrt(denom_sq) * torch.sqrt(self.k())
         return num / denom
+
+    def lorentz_variance(self, xs: torch.Tensor, mu: torch.Tensor, set_dim: int = -2) -> torch.Tensor:
+        """Lorentz variance: mean squared Lorentz distance to the mean."""
+        mu = mu.unsqueeze(set_dim)  # [B, D] -> [B, 1, D] for broadcasting
+        d2 = self.lorentz_distance2(xs, mu)                         
+        return d2.mean(dim=set_dim, keepdim=False)
 
     def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
         """Residual: Exp_x( weight * Log_x(y) )."""
@@ -245,6 +294,10 @@ class Lorentz(nn.Module):
             vx = self.proju(xf, vx, dim=-1)                      # enforce tangent at x
             out = self.expmap(xf, vx)
         return out.to(x.dtype)
+
+    def gyro_inv(self, x: torch.Tensor) -> torch.Tensor:
+        """Gyro-inverse (additive inverse) for the gyro-addition defined in gyro_add."""
+        return self.gyro_mul(-1.0, x)
 
     def gyro_mul(self, t: torch.Tensor | float, x: torch.Tensor) -> torch.Tensor:
         """Gyro-scalar multiplication: Exp_0( t * Log_0(x) ), as in (Shi, et al.)."""

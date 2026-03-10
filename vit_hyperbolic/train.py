@@ -16,6 +16,8 @@ def main():
     args = parser.parse_args()
     cfg = cfg_from_args(args)
 
+    print(cfg)
+
     set_seed(cfg.seed)
 
     run_start = time.perf_counter()
