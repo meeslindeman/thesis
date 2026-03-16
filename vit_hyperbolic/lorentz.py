@@ -190,7 +190,7 @@ class Lorentz(nn.Module):
         bp = base_point.float()
         y = x.float()
         k = self.k().float()
-        srt_k = torch.sqrt(k)
+        sqrt_k = torch.sqrt(k)
 
         if bp.dim() < y.dim():
             bp = bp.unsqueeze(-2)
@@ -209,7 +209,7 @@ class Lorentz(nn.Module):
 
         # out = factor.unsqueeze(-1) * direction
 
-        xy     = self._inner_stable(bp, y)
+        xy     = self.inner_stable(bp, y)
         alpha  = (-k * xy).clamp_min(1.0 + self.eps)
         dist   = torch.acosh(alpha) / sqrt_k
         u      = y + (k * xy) * bp

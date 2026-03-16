@@ -57,6 +57,7 @@ class LorentzEmbeddings(nn.Module):
         self.patch_embeddings = LorentzPatchEmbeddings(config)
         self.final_op = config["final_op"]
         self.manifold = config["manifold"]
+        self.init_mode = config["init_mode"]
 
         if self.final_op == "cls":
             self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"] + 1))
@@ -69,13 +70,16 @@ class LorentzEmbeddings(nn.Module):
 
         # initialize with random points on the unit sphere in the tangent space
         pos = torch.randn(1, n_tokens, config["hidden_size"])
-        pos = pos / pos.norm(dim=-1, keepdim=True)
-
-        target_r = 1.0
-        pos = pos * target_r
+        
+        if self.init_mode == "normalized":
+            radius = 1.0
+            pos = pos / pos.norm(dim=-1, keepdim=True) * radius
+        elif self.init_mode == "random":
+            pass  # keep as is
+        else:
+            raise ValueError(f"Invalid init_mode: {self.init_mode}. Must be 'normalized' or 'random'.")
 
         self.pos_space = nn.Parameter(pos)
-
         self.dropout = LorentzDropout(config)
 
     def forward(self, x):

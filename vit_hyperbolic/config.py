@@ -33,6 +33,7 @@ class Config:
     embeddings: str = "lorentz"
     use_midpoint: bool = False
     use_layer_norm: bool = False
+    init_mode: str = "normalized"
 
     # hyperbolic specifics
     curvature: float = 0.1
