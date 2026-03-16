@@ -35,12 +35,12 @@ class LorentzPatchEmbeddings(nn.Module):
         patch_dim  = p * p * self.num_channels
 
         # Rearrange to patches: [B, num_patches, patch_dim]
-        x = x.reshape(B, C, grid_size, p, grid_size, p)  # [B, C, Gh, p, Gw, p]
-        x = x.transpose(0, 2, 4, 3, 5, 1)               # [B, Gh, Gw, p, p, C]
-        x = x.reshape(B, num_patches, patch_dim)          # [B, N, patch_dim]
+        x = x.reshape(B, C, grid_size, p, grid_size, p)     # [B, C, Gh, p, Gw, p]
+        x = x.transpose(0, 2, 4, 3, 5, 1)                   # [B, Gh, Gw, p, p, C]
+        x = x.reshape(B, num_patches, patch_dim)            # [B, N, patch_dim]
 
         # Lift to hyperboloid
-        x_lor = manifold.projection_space_orthogonal(x)   # [B, N, patch_dim+1]
+        x_lor = manifold.projection_space_orthogonal(x)     # [B, N, patch_dim+1]
 
         # Project to hidden size
         projection = LorentzFullyConnected(
@@ -65,6 +65,7 @@ class LorentzEmbeddings(nn.Module):
     dropout_rate: float = 0.0
     reset_params: str   = "lorentz_kaiming"
     a_default:    float = 0.0
+    init_mode:    str   = "normalized"
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, deterministic: bool = False) -> jnp.ndarray:
@@ -98,9 +99,15 @@ class LorentzEmbeddings(nn.Module):
             n_tokens = num_patches
 
         # Learnable positional embeddings (tangent space, mapped to manifold)
-        def pos_init(key, shape, dtype=jnp.float32):
-            pos = jax.random.normal(key, shape, dtype=dtype)
-            return pos / jnp.linalg.norm(pos, axis=-1, keepdims=True)
+        if self.init_mode == "normalized":
+            def pos_init(key, shape, dtype=jnp.float32):
+                pos = jax.random.normal(key, shape, dtype=dtype)
+                return pos / jnp.linalg.norm(pos, axis=-1, keepdims=True)
+        elif self.init_mode == "random":
+            def pos_init(key, shape, dtype=jnp.float32):
+                return jax.random.normal(key, shape, dtype=dtype)
+        else:
+            raise ValueError(f"Invalid init_mode: {self.init_mode!r}. Must be 'normalized' or 'random'.")
 
         pos_space = self.param("pos_space", pos_init, (1, n_tokens, self.hidden_size))
         pos_lor   = manifold.expmap0(pos_space)              # [1, n_tokens, D]
@@ -294,13 +301,12 @@ class LorentzTransformerBlock(nn.Module):
         att_output = self.attention(x)
 
         if self.skip_connection:
-            alpha = float(res_scale_att)
             if self.use_midpoint:
                 xs2 = jnp.stack([x, att_output], axis=-2)
-                w2  = jnp.array([1.0 - alpha, alpha], dtype=x.dtype)
+                w2  = jnp.stack([1.0 - res_scale_att, res_scale_att]).astype(x.dtype)
                 x   = manifold.lorentz_midpoint(xs2, w2)
             else:
-                x = manifold.geodesic_residual(x, att_output, weight=alpha)
+                x = manifold.geodesic_residual(x, att_output, weight=res_scale_att)
         else:
             x = att_output
 
@@ -310,13 +316,12 @@ class LorentzTransformerBlock(nn.Module):
         mlp_output = self.mlp(x)
 
         if self.skip_connection:
-            alpha = float(res_scale_mlp)
             if self.use_midpoint:
                 xs2        = jnp.stack([x, mlp_output], axis=-2)
-                w2         = jnp.array([1.0 - alpha, alpha], dtype=x.dtype)
+                w2         = jnp.stack([1.0 - res_scale_mlp, res_scale_mlp]).astype(x.dtype)
                 mlp_output = manifold.lorentz_midpoint(xs2, w2)
             else:
-                mlp_output = manifold.geodesic_residual(x, mlp_output, weight=alpha)
+                mlp_output = manifold.geodesic_residual(x, mlp_output, weight=res_scale_mlp)
 
         return mlp_output
 
@@ -397,6 +402,7 @@ class LorentzViT(nn.Module):
     patch_embed_type:    str   = "linear"
     dropout_rate:        float = 0.0
     a_default:           float = 0.0
+    init_mode:           str   = "normalized"
 
     def setup(self):
         encoder_kwargs = dict(
@@ -439,6 +445,7 @@ class LorentzViT(nn.Module):
                 dropout_rate = self.dropout_rate,
                 reset_params = self.reset_params,
                 a_default    = self.a_default,
+                init_mode    = self.init_mode,
                 name         = "embedding",
             )
         else:
@@ -471,16 +478,16 @@ class LorentzViT(nn.Module):
         metrics = {} if return_metrics else None
 
         if self.embeddings == "euclidean":
-            x_euc  = self.embedding(x, deterministic=deterministic)  # [B, N, d]
-            r_max  = learned_radius()
-            norm   = jnp.linalg.norm(x_euc, axis=-1, keepdims=True)
-            scale  = jnp.clip(r_max / jnp.clip(norm, a_min=1e-6), a_max=1.0)
-            x_euc  = x_euc * scale
-            x_lor  = manifold.expmap0(x_euc)                         # [B, N, D]
+            x_euc = self.embedding(x, deterministic=deterministic)  # [B, N, d]
+            r_max = learned_radius()
+            norm = jnp.linalg.norm(x_euc, axis=-1, keepdims=True)
+            scale = jnp.clip(r_max / jnp.clip(norm, a_min=1e-6), a_max=1.0)
+            x_euc = x_euc * scale
+            x_lor = manifold.expmap0(x_euc)                         # [B, N, D]
         else:
-            x_lor  = self.embedding(x, deterministic=deterministic)  # [B, N, D]
+            x_lor = self.embedding(x, deterministic=deterministic)  # [B, N, D]
 
-        x_lor  = self.encoder(x_lor, deterministic=deterministic)    # [B, N, D]
+        x_lor = self.encoder(x_lor, deterministic=deterministic)    # [B, N, D]
 
         # Pool tokens
         if self.final_op == "cls":

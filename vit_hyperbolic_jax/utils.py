@@ -33,8 +33,8 @@ def build_parser(defaults: Config | None = None) -> argparse.ArgumentParser:
     defaults = defaults or Config()
     p = argparse.ArgumentParser()
     for f in fields(Config):
-        name        = f.name
-        t           = f.type
+        name = f.name
+        t = f.type
         default_val = getattr(defaults, name)
         if t is bool:
             group = p.add_mutually_exclusive_group(required=False)
@@ -72,12 +72,7 @@ def create_train_state(model, params, tx):
 # ---------------------------------------------------------------------------
 
 @jax.jit
-def train_step(
-    state,
-    images: jnp.ndarray,
-    labels: jnp.ndarray,
-    dropout_key: jax.Array,
-) -> Tuple[Any, float]:
+def train_step(state, images: jnp.ndarray, labels: jnp.ndarray, dropout_key: jax.Array) -> Tuple[Any, float]:
     """Single gradient update step."""
 
     def loss_fn(params):
@@ -90,25 +85,22 @@ def train_step(
         loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels).mean()
         return loss, logits
 
-    grad_fn           = jax.value_and_grad(loss_fn, has_aux=True)
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (loss, logits), grads = grad_fn(state.params)
-    state             = state.apply_gradients(grads=grads)
-    return state, loss
+    state = state.apply_gradients(grads=grads)
+    has_nan = jnp.any(jnp.isnan(logits))
+    return state, loss, has_nan
 
 
 @jax.jit
-def eval_step(
-    state,
-    images: jnp.ndarray,
-    labels: jnp.ndarray,
-) -> Tuple[float, float]:
+def eval_step(state, images: jnp.ndarray, labels: jnp.ndarray) -> Tuple[float, float]:
     """Single evaluation step; returns (loss, num_correct)."""
     logits, _ = state.apply_fn(
         {"params": state.params},
         images,
         deterministic=True,
     )
-    loss        = optax.softmax_cross_entropy_with_integer_labels(logits, labels).mean()
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels).mean()
     num_correct = (jnp.argmax(logits, axis=-1) == labels).sum()
     return loss, num_correct
 
@@ -117,11 +109,7 @@ def eval_step(
 # Epoch-level loops
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(
-    state,
-    trainloader,
-    key: jax.Array,
-) -> Tuple[Any, float, jax.Array]:
+def train_one_epoch(state, trainloader, key: jax.Array) -> Tuple[Any, float, jax.Array]:
     """Run one training epoch. Returns (new_state, avg_loss, new_key)."""
     total_loss  = 0.0
     total_count = 0
@@ -131,22 +119,25 @@ def train_one_epoch(
         labels = jnp.array(labels)
 
         key, dropout_key = jax.random.split(key)
-        state, loss      = train_step(state, images, labels, dropout_key)
+        state, loss, has_nan = train_step(state, images, labels, dropout_key)
 
-        total_loss  += float(loss) * images.shape[0]
+        if has_nan:
+            raise ValueError(f"NaN in logits detected after {total_count} samples — aborting training.")
+        
+        if jnp.isnan(loss):
+            raise ValueError(f"NaN loss detected after {total_count} samples — aborting training.")
+
+        total_loss += float(loss) * images.shape[0]
         total_count += images.shape[0]
 
     return state, total_loss / total_count, key
 
 
-def evaluate(
-    state,
-    testloader,
-) -> Tuple[float, float]:
+def evaluate(state, testloader) -> Tuple[float, float]:
     """Evaluate over the full test set. Returns (accuracy, avg_loss)."""
-    total_loss    = 0.0
+    total_loss = 0.0
     total_correct = 0
-    total_count   = 0
+    total_count = 0
 
     for images, labels in testloader:
         images = jnp.array(images)
@@ -154,10 +145,10 @@ def evaluate(
 
         loss, num_correct = eval_step(state, images, labels)
 
-        total_loss    += float(loss) * images.shape[0]
+        total_loss += float(loss) * images.shape[0]
         total_correct += int(num_correct)
-        total_count   += images.shape[0]
+        total_count += images.shape[0]
 
-    acc     = total_correct / total_count
+    acc = total_correct / total_count
     avg_loss = total_loss / total_count
     return acc, avg_loss

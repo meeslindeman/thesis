@@ -232,7 +232,7 @@ class Lorentz:
         xf  = x.astype(jnp.float32)
         yf  = y.astype(jnp.float32)
         v   = self.logmap(xf, yf).astype(jnp.float32)
-        v   = v * float(weight)
+        v   = v * weight
         out = self.expmap(xf, v)
         return out.astype(x.dtype)
 

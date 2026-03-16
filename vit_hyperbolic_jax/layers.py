@@ -55,17 +55,13 @@ class LorentzFullyConnected(nn.Module):
     do_mlr: bool = False
 
     @staticmethod
-    def _create_spacelike_vector(
-        U: jnp.ndarray,   # [in_spatial, out_spatial]
-        a: jnp.ndarray,   # [1, out_spatial]
-        curvature: float,
-    ) -> jnp.ndarray:     # [in_features, out_spatial]  (in_features = 1 + in_spatial)
+    def _create_spacelike_vector(U: jnp.ndarray, a: jnp.ndarray, curvature: float) -> jnp.ndarray:     
         """Build spacelike hyperplane normal V from weight U and bias a."""
-        U_norm = jnp.linalg.norm(U, axis=0, keepdims=True).clip(1e-10)  # [1, out_spatial]
+        U_norm = jnp.linalg.norm(U, axis=0, keepdims=True).clip(1e-10)      # [1, out_spatial]
         arg    = jnp.clip(curvature ** 0.5 * a / U_norm, a_min=-100.0, a_max=100.0)
-        time   = -U_norm * jnp.sinh(arg)   # [1, out_spatial]
-        space  = jnp.cosh(arg) * U         # [in_spatial, out_spatial]
-        return jnp.concatenate([time, space], axis=0)  # [in_features, out_spatial]
+        time   = -U_norm * jnp.sinh(arg)                                    # [1, out_spatial]
+        space  = jnp.cosh(arg) * U                                          # [in_spatial, out_spatial]
+        return jnp.concatenate([time, space], axis=0)                       # [in_features, out_spatial]
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:

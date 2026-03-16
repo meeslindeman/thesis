@@ -51,4 +51,5 @@ data/
 # --- Miscellaneous ---
 *.job
 wandb/
+sweeps/
 

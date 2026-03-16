@@ -1,12 +1,3 @@
-"""
-Training script for LorentzViT in JAX/Flax.
-
-Usage:
-    python -m vit_hyperbolic_jax.train [--epochs 30] [--lr 1e-3] ...
-
-Requires:
-    jax, flax, optax, cifar10_utils (same as original)
-"""
 from __future__ import annotations
 
 import time
@@ -30,8 +21,8 @@ from vit_hyperbolic_jax.utils import (
 
 def main():
     parser = build_parser()
-    args   = parser.parse_args()
-    cfg    = cfg_from_args(args)
+    args = parser.parse_args()
+    cfg = cfg_from_args(args)
     print(cfg)
 
     key = set_seed(cfg.seed)
@@ -39,10 +30,10 @@ def main():
     run_start = time.perf_counter()
 
     from cifar10_utils import get_cifar10, get_dataloader
-    dataset     = get_cifar10(data_dir="data/", validation_size=5000)
+    dataset = get_cifar10(data_dir="data/", validation_size=5000)
     dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
     trainloader = dataloaders["train"]
-    testloader  = dataloaders["test"]
+    testloader = dataloaders["test"]
 
     # Build model from config
     model_kwargs = asdict(cfg)
@@ -71,7 +62,7 @@ def main():
 
     for epoch in range(cfg.epochs):
         state, train_loss, key = train_one_epoch(state, trainloader, key)
-        acc, test_loss         = evaluate(state, testloader)
+        acc, test_loss = evaluate(state, testloader)
 
         print(
             f"Epoch: {epoch + 1:3d}  "

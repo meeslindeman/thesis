@@ -296,13 +296,13 @@ class Lorentz(nn.Module):
         d2 = self.lorentz_distance2(xs, mu)                         
         return d2.mean(dim=set_dim, keepdim=False)
 
-    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
+    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight = 0.5) -> torch.Tensor:
         """Residual: Exp_x( weight * Log_x(y) )."""
         with torch.autocast(device_type="cuda", enabled=False):
             xf = x.float()
             yf = y.float()
             v = self.logmap(xf, yf).float()
-            v = v * float(weight)
+            v = v * weight
             out = self.expmap(xf, v)
         return out.to(x.dtype)
 

@@ -12,7 +12,6 @@ from vit_hyperbolic_jax.layers import LorentzFullyConnected
 HeadMode   = Literal["full_midpoint", "split_concat"]
 ConcatMode = Literal["direct", "logradius"]
 
-
 class LorentzMHA(nn.Module):
     """
     Multi-head attention in Lorentz space.
@@ -85,18 +84,12 @@ class LorentzMHA(nn.Module):
 
         # Precompute log-radius scale for concat_logradius
         if self.head_mode == "split_concat" and self.concat_mode == "logradius":
-            from jax.scipy.special import digamma
+            from scipy.special import digamma
             n  = float(spatial_dim)
             ni = float(head_spatial_dim)
-            self._log_radius_scale = float(
-                jnp.exp(0.5 * (digamma(n / 2.0) - digamma(ni / 2.0)))
-            )
+            self._log_radius_scale = math.exp(0.5 * (digamma(n / 2.0) - digamma(ni / 2.0)))
         else:
             self._log_radius_scale = None
-
-    # ------------------------------------------------------------------
-    # Attention score helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _lorentz_inner(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
@@ -112,21 +105,17 @@ class LorentzMHA(nn.Module):
         k  = float(self.curvature)
         return -2.0 * k - 2.0 * lp
 
-    # ------------------------------------------------------------------
-    # Head fusion helpers
-    # ------------------------------------------------------------------
-
     def _concat_heads_direct(self, x: jnp.ndarray) -> jnp.ndarray:
         """Qu et al. direct concatenation with time recomputation."""
         B, H, N, Dh = x.shape
         d_head = Dh - 1
         k      = float(self.curvature)
-        x      = x.transpose(0, 2, 1, 3)                          # [B, N, H, Dh]
-        time   = x[..., :1]                                        # [B, N, H, 1]
-        space  = x[..., 1:]                                        # [B, N, H, d_head]
-        space_cat   = space.reshape(B, N, H * d_head)              # [B, N, spatial_dim]
-        time_sq_sum = (time ** 2).sum(axis=2) + (H - 1) / k       # [B, N, 1]
-        t_prime     = jnp.sqrt(jnp.clip(time_sq_sum, a_min=1e-9)) # [B, N, 1]
+        x      = x.transpose(0, 2, 1, 3)                            # [B, N, H, Dh]
+        time   = x[..., :1]                                         # [B, N, H, 1]
+        space  = x[..., 1:]                                         # [B, N, H, d_head]
+        space_cat   = space.reshape(B, N, H * d_head)               # [B, N, spatial_dim]
+        time_sq_sum = (time ** 2).sum(axis=2) + (H - 1) / k         # [B, N, 1]
+        t_prime     = jnp.sqrt(jnp.clip(time_sq_sum, a_min=1e-9))   # [B, N, 1]
         return jnp.concatenate([t_prime, space_cat], axis=-1)
 
     def _concat_heads_log_radius(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -135,7 +124,7 @@ class LorentzMHA(nn.Module):
         d_head = Dh - 1
         k      = float(self.curvature)
         s      = self._log_radius_scale
-        x      = x.transpose(0, 2, 1, 3)                           # [B, N, H, Dh]
+        x      = x.transpose(0, 2, 1, 3)                            # [B, N, H, Dh]
         time   = x[..., :1]                                         # [B, N, H, 1]
         space  = x[..., 1:]                                         # [B, N, H, d_head]
         space_cat  = (s * space).reshape(B, N, H * d_head)          # [B, N, spatial_dim]
@@ -143,15 +132,7 @@ class LorentzMHA(nn.Module):
         t_prime    = jnp.sqrt(jnp.clip(1.0 / k + s ** 2 * time_sum, a_min=1e-9))
         return jnp.concatenate([t_prime, space_cat], axis=-1)
 
-    # ------------------------------------------------------------------
-    # Forward
-    # ------------------------------------------------------------------
-
-    def __call__(
-        self,
-        x: jnp.ndarray,
-        attn_mask: Optional[jnp.ndarray] = None,
-    ) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, attn_mask: Optional[jnp.ndarray] = None) -> jnp.ndarray:
         """
         x: [B, N, D]
         attn_mask: optional bool array [N, N] or [B, N, N]  (True = attend, False = mask out)
@@ -177,9 +158,9 @@ class LorentzMHA(nn.Module):
         if attn_mask is not None:
             attn_mask = attn_mask.astype(jnp.bool_)
             if attn_mask.ndim == 2:
-                m = attn_mask[jnp.newaxis, jnp.newaxis, :, :]    # [1, 1, N, N]
+                m = attn_mask[jnp.newaxis, jnp.newaxis, :, :]       # [1, 1, N, N]
             elif attn_mask.ndim == 3:
-                m = attn_mask[:, jnp.newaxis, :, :]               # [B, 1, N, N]
+                m = attn_mask[:, jnp.newaxis, :, :]                 # [B, 1, N, N]
             else:
                 raise ValueError(f"attn_mask must be [N,N] or [B,N,N], got {attn_mask.shape}")
             scores = jnp.where(m, scores, jnp.full_like(scores, -1e9))

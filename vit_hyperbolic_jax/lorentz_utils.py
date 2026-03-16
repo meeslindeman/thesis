@@ -11,8 +11,6 @@ class LorentzDropout(nn.Module):
     """
     Lorentz dropout (Shi et al.).
     Masks spatial coordinates, keeps time component intact, then re-projects to manifold.
-
-    Requires 'dropout' RNG key when training.
     """
     dropout_rate: float
     curvature: float
