@@ -52,6 +52,23 @@ class Lorentz(nn.Module):
             res = res.squeeze(dim)
         return res
 
+    def inner_stable(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """
+        Numerically stable <x,y>_L for points on the hyperboloid.
+        Uses x_s·y_s = (‖x_s‖² + ‖y_s‖² - ‖x_s-y_s‖²) / 2
+        to avoid cancellation between large time and space terms.
+        Both x, y must be float32 and on the manifold.
+        """
+        x0  = x[..., :1]
+        y0  = y[..., :1]
+        x_s = x[..., 1:]
+        y_s = y[..., 1:]
+        diff_sq  = ((x_s - y_s) ** 2).sum(dim=-1, keepdim=True)
+        xs_sq    = (x_s * x_s).sum(dim=-1, keepdim=True)
+        ys_sq    = (y_s * y_s).sum(dim=-1, keepdim=True)
+        space_dot = (xs_sq + ys_sq - diff_sq) * 0.5
+        return -x0 * y0 + space_dot
+
     def component_inner(self, x: torch.Tensor, u: torch.Tensor, v: torch.Tensor = None, *, dim=-1) -> torch.Tensor:
         """Alias for inner(u, v) with keepdim=True."""
         if v is None:
@@ -60,20 +77,24 @@ class Lorentz(nn.Module):
 
     def lorentz_distance(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """Lorentz distance: d(x,y) = (1/sqrt(k)) * arcosh(-k <x,y>_L)."""
-        k = self.k().to(dtype=x.dtype, device=x.device)
-        ip = self.inner(x, y, keepdim=True, dim=dim)                  # [..., 1]
-        alpha = (-k * ip).clamp_min(1.0 + self.eps)                   # domain for acosh
-        return torch.acosh(alpha) / torch.sqrt(k)
+        k   = self.k().to(dtype=x.dtype, device=x.device)
+        xf  = x.float()
+        yf  = y.float()
+        ip  = self._inner_stable(xf, yf)
+        alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
+        return (torch.acosh(alpha) / torch.sqrt(k.float())).to(x.dtype)
 
     def lorentz_distance2(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """
         Squared geodesic distance: d_L(x,y)^2 = acosh( -k <x,y>_L )^2 / k
         """
-        k = self.k().to(dtype=x.dtype, device=x.device)
-        ip = self.inner(x, y, keepdim=True, dim=dim)                  # [..., 1]
-        alpha = (-k * ip).clamp_min(1.0 + self.eps)
-        ac = torch.acosh(alpha)
-        return (ac * ac) / k
+        k   = self.k().to(dtype=x.dtype, device=x.device)
+        xf  = x.float()
+        yf  = y.float()
+        ip  = self.inner_stable(xf, yf)
+        alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
+        ac  = torch.acosh(alpha)
+        return ((ac * ac) / k.float()).to(x.dtype)
 
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
         """Project space coords x to the hyperboloid by solving time from constraint."""
@@ -169,23 +190,32 @@ class Lorentz(nn.Module):
         bp = base_point.float()
         y = x.float()
         k = self.k().float()
+        srt_k = torch.sqrt(k)
 
         if bp.dim() < y.dim():
             bp = bp.unsqueeze(-2)
 
-        # <bp, y>_L
-        inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
+        # # <bp, y>_L
+        # inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
 
-        # on-manifold domain: <bp,y>_L <= -1/k  => alpha = -k<bp,y>_L >= 1
-        inner_max = -(1.0 / k + 1e-6)
-        inner_clamped = torch.minimum(inner, inner_max)
-        alpha = -k * inner_clamped  # >= 1
+        # # on-manifold domain: <bp,y>_L <= -1/k  => alpha = -k<bp,y>_L >= 1
+        # inner_max = -(1.0 / k + 1e-6)
+        # inner_clamped = torch.minimum(inner, inner_max)
+        # alpha = -k * inner_clamped  # >= 1
 
-        direction = y - alpha.unsqueeze(-1) * bp
-        denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
-        factor = torch.acosh(alpha) / denom
+        # direction = y - alpha.unsqueeze(-1) * bp
+        # denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
+        # factor = torch.acosh(alpha) / denom
 
-        out = factor.unsqueeze(-1) * direction
+        # out = factor.unsqueeze(-1) * direction
+
+        xy     = self._inner_stable(bp, y)
+        alpha  = (-k * xy).clamp_min(1.0 + self.eps)
+        dist   = torch.acosh(alpha) / sqrt_k
+        u      = y + (k * xy) * bp
+        norm_u = (torch.sinh(sqrt_k * dist) / sqrt_k).clamp_min(1e-9)
+        out    = dist * (u / norm_u)
+        out    = self.proju(bp, out, dim=-1)
         return out.to(x.dtype)
 
     def expmap(self, base_point: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -195,17 +225,26 @@ class Lorentz(nn.Module):
 
         bp = base_point.float()
         vf = v.float()
-
         k = self.k().float()
         sqrt_k = torch.sqrt(k)
 
-        vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
-        norm_v = torch.sqrt(vv)
-        arg = sqrt_k * norm_v
+        # vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
+        # norm_v = torch.sqrt(vv)
+        # arg = sqrt_k * norm_v
 
-        left = torch.cosh(arg)
+        # left = torch.cosh(arg)
+        # right = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
+        # out = left * bp + right * vf
+
+        vv     = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
+        norm_v = torch.sqrt(vv)
+        arg    = sqrt_k * norm_v
+
+        left  = torch.cosh(arg)
         right = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
-        out = left * bp + right * vf
+        out   = left * bp + right * vf
+        out   = self.projx(out, dim=-1)
+
         return out.to(base_point.dtype)
 
     def parallel_transport(self, base_point: torch.Tensor, tangent_vec: torch.Tensor, to_point: torch.Tensor) -> torch.Tensor:

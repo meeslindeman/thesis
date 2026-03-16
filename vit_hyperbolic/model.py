@@ -70,6 +70,10 @@ class LorentzEmbeddings(nn.Module):
         # initialize with random points on the unit sphere in the tangent space
         pos = torch.randn(1, n_tokens, config["hidden_size"])
         pos = pos / pos.norm(dim=-1, keepdim=True)
+
+        target_r = 1.0
+        pos = pos * target_r
+
         self.pos_space = nn.Parameter(pos)
 
         self.dropout = LorentzDropout(config)
