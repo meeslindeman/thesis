@@ -43,3 +43,6 @@ class Config:
     reset_params: str = "lorentz_kaiming"
     skip_connection: bool = False
     a_default: float = 0.0
+
+    # wandb
+    group: str = "default"

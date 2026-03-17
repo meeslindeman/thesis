@@ -276,6 +276,7 @@ class LorentzTransformerBlock(nn.Module):
                     upd = self.manifold.update_metrics(v_att)
                     metrics[f"{prefix}/att_update_mean"] = upd["mean"]
                     metrics[f"{prefix}/att_update_max"] = upd["max"]
+                    metrics[f"{prefix}/res_scale_att"] = float(self.res_scale_att)
         else:
             x = att_output
             if return_metrics:
@@ -305,7 +306,7 @@ class LorentzTransformerBlock(nn.Module):
                     upd = self.manifold.update_metrics(v_mlp)
                     metrics[f"{prefix}/mlp_update_mean"] = upd["mean"]
                     metrics[f"{prefix}/mlp_update_max"] = upd["max"]
-
+                    metrics[f"{prefix}/res_scale_mlp"] = float(self.res_scale_mlp)
                 out = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
         else:
             out = mlp_output

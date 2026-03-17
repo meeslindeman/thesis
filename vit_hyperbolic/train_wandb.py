@@ -31,11 +31,9 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
         logits, metrics = model(images, return_metrics=check_metrics)
 
         if metrics is not None:
-            for stage, vals in metrics.items():
-                for k, v in vals.items():
-                    key = f"{stage}.{k}"
-                    metric_sums[key] = metric_sums.get(key, 0.0) + float(v)
-                    metric_counts[key] = metric_counts.get(key, 0) + 1
+            for k, v in metrics.items():
+                metric_sums[k] = metric_sums.get(k, 0.0) + float(v)
+                metric_counts[k] = metric_counts.get(k, 0) + 1
 
         if not torch.isfinite(logits).all():
             raise RuntimeError("Non-finite logits detected")
@@ -65,6 +63,8 @@ def main():
     wandb.init(
         entity="hyperbolic-vit-team",
         project="hyperbolic-vit",
+        name=f"run-{int(time.time())}",
+        group=cfg.group,
         config=asdict(cfg),
     )
 
