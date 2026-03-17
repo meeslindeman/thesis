@@ -32,7 +32,7 @@ class LorentzPatchEmbeddings(nn.Module):
             a_default=config["a_default"]
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
         if H != self.image_size or W != self.image_size:
             raise ValueError(f"Expected {(self.image_size, self.image_size)} but got {(H, W)}")
@@ -42,11 +42,8 @@ class LorentzPatchEmbeddings(nn.Module):
         x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
         x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
 
-        # compute time component
         x_lor = self.manifold.projection_space_orthogonal(x, manifold_dim=-1)   # [B, N, patch_dim+1]
-
-        # project to hidden size
-        x_lor = self.projection(x_lor)              # [B, N, hidden_size+1]
+        x_lor = self.projection(x_lor)                                          # [B, N, hidden_size+1]
         return x_lor
 
 
@@ -68,35 +65,43 @@ class LorentzEmbeddings(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        # initialize with random points on the unit sphere in the tangent space
+        # Initialize with random points on the unit sphere in the tangent space
         pos = torch.randn(1, n_tokens, config["hidden_size"])
         
         if self.init_mode == "normalized":
             radius = 1.0
             pos = pos / pos.norm(dim=-1, keepdim=True) * radius
         elif self.init_mode == "random":
-            pass  # keep as is
+            pass  
         else:
             raise ValueError(f"Invalid init_mode: {self.init_mode}. Must be 'normalized' or 'random'.")
 
         self.pos_space = nn.Parameter(pos)
         self.dropout = LorentzDropout(config)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, return_metrics: bool = False) -> torch.Tensor:
+        metrics = {} if return_metrics else None
+
         x = self.patch_embeddings(x)
         batch_size = x.shape[0]
 
         if self.final_op == "cls":
-            cls = self.cls_token.expand(batch_size, -1, -1)     # [B, 1, D]
-            x = torch.cat((cls, x), dim=1)                      # [B, 1+P, D]
+            cls = self.cls_token.expand(batch_size, -1, -1)
+            x = torch.cat((cls, x), dim=1)
 
-        # project position embeddings to manifold
         pos_lor = self.manifold.expmap0(self.pos_space)
+        x = self.manifold.gyro_add(x, pos_lor)
 
-        # add position embeddings via gyro_add
-        x = self.manifold.gyro_add(x, pos_lor)                  # [B, N, D]
-        # x = self.dropout(x)
-        return x
+        if return_metrics:
+            r = self.manifold.radius_metrics(x)
+            metrics["embed/r_mean"] = r["mean"]
+            metrics["embed/r_max"] = r["max"]
+
+            pos_norm = self.pos_space.detach().norm(dim=-1)
+            metrics["params/pos_space_norm_mean"] = float(pos_norm.mean().cpu())
+            metrics["params/pos_space_norm_max"] = float(pos_norm.max().cpu())
+
+        return x, metrics
 
 
 # TODO: move to separate file
@@ -129,7 +134,7 @@ class PatchEmbeddings(nn.Module):
         else:
             raise ValueError(f"Invalid patch_embed_type: {self.patch_embed_type}. Use 'conv' or 'linear'.")
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
         if H != self.image_size or W != self.image_size:
             raise ValueError(f"Expected {(self.image_size, self.image_size)} but got {(H, W)}")
@@ -172,7 +177,7 @@ class Embeddings(nn.Module):
 
         self.dropout = nn.Dropout(config["dropout_rate"])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embeddings(x)
         batch_size = x.shape[0]
 
@@ -203,11 +208,10 @@ class LorentzMLP(nn.Module):
             a_default=config["a_default"]
         )
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.fc2(x)
-        # x = self.dropout(x)
-        return x
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x1 = self.fc1(x)
+        x2 = self.fc2(x1)
+        return x2
 
 
 class LorentzTransformerBlock(nn.Module):
@@ -240,7 +244,15 @@ class LorentzTransformerBlock(nn.Module):
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_metrics: bool = False, block_idx: int = None) -> torch.Tensor:
+        prefix = f"block{block_idx}" if block_idx is not None else "block"
+        metrics = {} if return_metrics else None
+
+        if return_metrics:
+            r_in = self.manifold.radius_metrics(x)
+            metrics[f"{prefix}/r_in_mean"] = r_in["mean"]
+            metrics[f"{prefix}/r_in_max"] = r_in["max"]
+
         if self.use_layer_norm:
             x = self.layernorm1(x)
 
@@ -252,13 +264,27 @@ class LorentzTransformerBlock(nn.Module):
                 xs2 = torch.stack([x, att_output], dim=-2)
                 w2 = torch.tensor([1.0 - alpha, alpha], device=x.device, dtype=x.dtype)
                 x = self.manifold.lorentz_midpoint(xs2, w2)
+                if return_metrics:
+                    metrics[f"{prefix}/att_update_mean"] = float("nan")
+                    metrics[f"{prefix}/att_update_max"] = float("nan")
             else:
                 x = self.manifold.geodesic_residual(x, att_output, weight=self.res_scale_att)
+                if return_metrics:
+                    v_att = self.manifold.logmap(x.float(), att_output.float()).float()
+                    v_att = self.manifold.proju(x.float(), v_att, dim=-1)
+                    v_att = v_att * self.res_scale_att.float()
+                    upd = self.manifold.update_metrics(v_att)
+                    metrics[f"{prefix}/att_update_mean"] = upd["mean"]
+                    metrics[f"{prefix}/att_update_max"] = upd["max"]
         else:
             x = att_output
+            if return_metrics:
+                metrics[f"{prefix}/att_update_mean"] = float("nan")
+                metrics[f"{prefix}/att_update_max"] = float("nan")
 
         if self.use_layer_norm:
             x = self.layernorm2(x)
+
         mlp_output = self.mlp(x)
 
         if self.skip_connection:
@@ -266,25 +292,51 @@ class LorentzTransformerBlock(nn.Module):
                 alpha = float(self.res_scale_mlp)
                 xs2 = torch.stack([x, mlp_output], dim=-2)
                 w2 = torch.tensor([1.0 - alpha, alpha], device=x.device, dtype=x.dtype)
-                mlp_output = self.manifold.lorentz_midpoint(xs2, w2)
-            else:
-                mlp_output = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
+                out = self.manifold.lorentz_midpoint(xs2, w2)
 
-        return mlp_output
+                if return_metrics:
+                    metrics[f"{prefix}/mlp_update_mean"] = float("nan")
+                    metrics[f"{prefix}/mlp_update_max"] = float("nan")
+            else:
+                if return_metrics:
+                    v_mlp = self.manifold.logmap(x.float(), mlp_output.float()).float()
+                    v_mlp = self.manifold.proju(x.float(), v_mlp, dim=-1)
+                    v_mlp = v_mlp * self.res_scale_mlp.float()
+                    upd = self.manifold.update_metrics(v_mlp)
+                    metrics[f"{prefix}/mlp_update_mean"] = upd["mean"]
+                    metrics[f"{prefix}/mlp_update_max"] = upd["max"]
+
+                out = self.manifold.geodesic_residual(x, mlp_output, weight=self.res_scale_mlp)
+        else:
+            out = mlp_output
+            if return_metrics:
+                metrics[f"{prefix}/mlp_update_mean"] = float("nan")
+                metrics[f"{prefix}/mlp_update_max"] = float("nan")
+
+        if return_metrics:
+            r_out = self.manifold.radius_metrics(out)
+            metrics[f"{prefix}/r_out_mean"] = r_out["mean"]
+            metrics[f"{prefix}/r_out_max"] = r_out["max"]
+
+        return out, metrics
 
 
 class LorentzEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.blocks = nn.ModuleList([])
-        for _ in range(config["num_hidden_layers"]):
-            block = (LorentzTransformerBlock(config))
-            self.blocks.append(block)
+        self.blocks = nn.ModuleList(
+            [LorentzTransformerBlock(config) for _ in range(config["num_hidden_layers"])]
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for block in self.blocks:
-            x = block(x)
-        return x
+    def forward(self, x: torch.Tensor, return_metrics: bool = False):
+        metrics = {} if return_metrics else None
+
+        for idx, block in enumerate(self.blocks):
+            x, block_metrics = block(x, return_metrics=return_metrics, block_idx=idx)
+            if return_metrics:
+                metrics.update(block_metrics)
+
+        return x, metrics
     
 
 class LorentzViT(nn.Module):
@@ -340,22 +392,41 @@ class LorentzViT(nn.Module):
 
         if self.embedding_space == "euclidean":
             x_euc = self.embedding(x)                   # [B, N, d]
-
-            # clamp radius (optional to just set to any number or keep learned)
             r_max = self.learned_radius()
             x_euc = self.clamp_euclidean_radius(x_euc, r_max) 
-
             x_lor0 = self.manifold.expmap0(x_euc)       # [B, N, D]
 
+            if return_metrics:
+                r = self.manifold.radius_metrics(x_lor0)
+                metrics["embed/r_mean"] = r["mean"]
+                metrics["embed/r_max"] = r["max"]
+
         elif self.embedding_space == "lorentz":
-            x_lor0 = self.embedding(x)                  # [B, N, D]
+            x_lor0, emb_metrics = self.embedding(x, return_metrics=return_metrics)                  # [B, N, D]
+            if return_metrics:
+                metrics.update(emb_metrics)
 
-        x_lor = self.encoder(x_lor0)                    # [B, N, D]
+        x_lor, enc_metrics = self.encoder(x_lor0, return_metrics=return_metrics)
 
-        pooled = self.pool_tokens(x_lor)                # [B, D]
+        if return_metrics:
+            metrics.update(enc_metrics)
 
-        logits = self.classifier(pooled)    
-         
+            r_enc = self.manifold.radius_metrics(x_lor)
+            metrics["model/r_encoder_mean"] = r_enc["mean"]
+            metrics["model/r_encoder_max"] = r_enc["max"]
+
+        pooled = self.pool_tokens(x_lor)
+
+        if return_metrics:
+            r_pool = self.manifold.radius_metrics(pooled)
+            metrics["model/r_pool_mean"] = r_pool["mean"]
+            metrics["model/r_pool_max"] = r_pool["max"]
+
+        logits = self.classifier(pooled)
+
+        if return_metrics:
+            metrics["model/logits_abs_max"] = float(logits.detach().abs().max().cpu())
+
         return (logits, metrics) if return_metrics else (logits, None)
 
 

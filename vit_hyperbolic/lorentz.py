@@ -296,7 +296,7 @@ class Lorentz(nn.Module):
         d2 = self.lorentz_distance2(xs, mu)                         
         return d2.mean(dim=set_dim, keepdim=False)
 
-    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight = 0.5) -> torch.Tensor:
+    def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
         """Residual: Exp_x( weight * Log_x(y) )."""
         with torch.autocast(device_type="cuda", enabled=False):
             xf = x.float()
@@ -402,3 +402,25 @@ class Lorentz(nn.Module):
             m = float(finite.abs().max())
             if m > 1e6:
                 print(f"[warn] {tag} |max|={m:.3e}")
+
+    def radius_metrics(self, x: torch.Tensor) -> dict:
+        with torch.no_grad():
+            xf = x.detach().float()
+            k = self.k().float()
+            sqrt_k = torch.sqrt(k)
+            x0 = xf[..., 0]
+            r = torch.acosh((sqrt_k * x0).clamp_min(1.0 + 1e-6)) / sqrt_k
+            return {
+                "mean": float(r.mean().cpu()),
+                "max": float(r.max().cpu()),
+            }
+
+    def update_metrics(self, v: torch.Tensor) -> dict:
+        with torch.no_grad():
+            vf = v.detach().float()
+            vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(0.0).squeeze(-1)
+            vnorm = torch.sqrt(vv)
+            return {
+                "mean": float(vnorm.mean().cpu()),
+                "max": float(vnorm.max().cpu()),
+            }
