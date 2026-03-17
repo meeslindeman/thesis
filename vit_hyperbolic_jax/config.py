@@ -36,6 +36,7 @@ class Config:
     init_mode:       str  = "normalized"
 
     # Hyperbolic specifics
+    init_mode:       str   = "normalized"
     curvature:       float = 0.1
     head_mode:       str   = "split_concat"
     concat_mode:     str   = "logradius"
