@@ -329,38 +329,6 @@ class LorentzViT(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-    # temporary utilities for monitoring and debugging - can remove later
-    @staticmethod
-    def _lorentz_util_metrics(x_lor: torch.Tensor, k: float, eps: float = 1e-6) -> dict:
-        """
-        x_lor: [B, N, D] or [B, D] with time coordinate at index 0.
-        Returns scalar metrics indicating how far points are from origin.
-        """
-        k = float(k)
-        with torch.no_grad():
-            if x_lor.dim() == 2:
-                x0 = x_lor[:, 0]
-                xs = x_lor[:, 1:]
-            else:
-                x0 = x_lor[..., 0]
-                xs = x_lor[..., 1:]
-
-            sqrt_k = float(k) ** 0.5
-
-            arg = (sqrt_k * x0).clamp_min(1.0 + eps)
-
-            r = torch.acosh(arg) / sqrt_k
-
-            xs_norm = torch.linalg.norm(xs, dim=-1)
-
-            return {
-                "r_mean": r.mean().item(),
-                "r_std": r.std(unbiased=True).item(),
-                "xs_norm_mean": xs_norm.mean().item(),
-                "xs_norm_std": xs_norm.std(unbiased=True).item(),
-                # "r_p95": torch.quantile(r.flatten(), 0.95).item(),
-            }
-
     @staticmethod
     def clamp_euclidean_radius(x: torch.Tensor, r_max: float, eps: float = 1e-6):
         norm = x.norm(dim=-1, keepdim=True)
@@ -379,21 +347,12 @@ class LorentzViT(nn.Module):
 
             x_lor0 = self.manifold.expmap0(x_euc)       # [B, N, D]
 
-            if return_metrics:
-                metrics["after_embedding (expmap0)"] = self._lorentz_util_metrics(x_lor0, self.k)
-
         elif self.embedding_space == "lorentz":
             x_lor0 = self.embedding(x)                  # [B, N, D]
-            if return_metrics:
-                metrics["after_embedding (lorentz)"] = self._lorentz_util_metrics(x_lor0, self.k)
-        
+
         x_lor = self.encoder(x_lor0)                    # [B, N, D]
-        if return_metrics:
-            metrics["after_encoder"] = self._lorentz_util_metrics(x_lor, self.k)
 
         pooled = self.pool_tokens(x_lor)                # [B, D]
-        if return_metrics:
-            metrics["after_pool"] = self._lorentz_util_metrics(pooled, self.k)
 
         logits = self.classifier(pooled)    
          
