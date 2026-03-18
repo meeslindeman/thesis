@@ -306,7 +306,6 @@ class Lorentz(nn.Module):
             out = self.expmap(xf, v)
         return out.to(x.dtype)
 
-
     def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 0.5, wy: float = 0.5, eps: float = 1e-9) -> torch.Tensor:
         """LResNet-style residual via ambient interpolation + renormalization (He et al.)."""
         z = wx * x + wy * y

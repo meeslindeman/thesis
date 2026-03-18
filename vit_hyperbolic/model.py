@@ -42,7 +42,7 @@ class LorentzPatchEmbeddings(nn.Module):
         x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
         x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
 
-        x_lor = self.manifold.projection_space_orthogonal(x, manifold_dim=-1)   # [B, N, patch_dim+1]
+        x_lor = self.manifold.expmap0(x)                                        # [B, N, patch_dim+1]
         x_lor = self.projection(x_lor)                                          # [B, N, hidden_size+1]
         return x_lor
 
@@ -54,7 +54,6 @@ class LorentzEmbeddings(nn.Module):
         self.patch_embeddings = LorentzPatchEmbeddings(config)
         self.final_op = config["final_op"]
         self.manifold = config["manifold"]
-        self.init_mode = config["init_mode"]
 
         if self.final_op == "cls":
             self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"] + 1))
@@ -65,17 +64,9 @@ class LorentzEmbeddings(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        # Initialize with random points on the unit sphere in the tangent space
-        pos = torch.randn(1, n_tokens, config["hidden_size"])
+        d = config["hidden_size"]
+        pos = torch.randn(1, n_tokens, d) / d**0.5
         
-        if self.init_mode == "normalized":
-            radius = 1.0
-            pos = pos / pos.norm(dim=-1, keepdim=True) * radius
-        elif self.init_mode == "random":
-            pass  
-        else:
-            raise ValueError(f"Invalid init_mode: {self.init_mode}. Must be 'normalized' or 'random'.")
-
         self.pos_space = nn.Parameter(pos)
         self.dropout = LorentzDropout(config)
 

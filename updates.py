@@ -1,9 +1,8 @@
 import wandb
 api = wandb.Api()
 
-runs = api.runs("hyperbolic-vit-team/hyperbolic-vit")
+runs = api.runs("hyperbolic-vit-team/cifar10")
 
 for r in runs:
-    if r.group == "tiny":
-        r.config["variant"] = r.name   # copy name to config
-        r.update()
+    r.config["variant"] = r.name
+    r.update()

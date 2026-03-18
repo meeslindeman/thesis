@@ -62,8 +62,8 @@ def main():
 
     wandb.init(
         entity="hyperbolic-vit-team",
-        project="hyperbolic-vit",
-        name=f"run-{int(time.time())}",
+        project="cifar10",
+        name=cfg.name,
         group=cfg.group,
         config=asdict(cfg),
     )

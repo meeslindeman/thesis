@@ -72,6 +72,9 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
 
         logits, metrics = model(images, return_metrics=check_metrics)
 
+        if logits.isnan().any() or logits.isinf().any():
+            raise ValueError("Logits contain NaN or Inf values.")
+
         if metrics is not None:
             for k, v in metrics.items():
                 metric_sums[k] = metric_sums.get(k, 0.0) + float(v)
