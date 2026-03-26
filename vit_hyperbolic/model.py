@@ -5,7 +5,7 @@ import numpy as np
 
 from vit_hyperbolic.lorentz import Lorentz
 from vit_hyperbolic.attention import LorentzMHA
-from vit_hyperbolic.lorentz_utils import LorentzDropout, LorentzLayerNorm
+from vit_hyperbolic.lorentz_utils import LorentzDropout, LorentzLayerNorm, LorentzBatchNorm
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -16,6 +16,7 @@ class LorentzPatchEmbeddings(nn.Module):
         self.patch_size = config["patch_size"]
         self.num_channels = config["num_channels"]
         self.hidden_size = config["hidden_size"]
+        self.normalization = config["normalization"]
 
         self.manifold = config["manifold"]
 
@@ -31,6 +32,8 @@ class LorentzPatchEmbeddings(nn.Module):
             reset_params=config["reset_params"],
             a_default=config["a_default"]
         )
+        self.batchnorm = LorentzBatchNorm(manifold=config["manifold"], dim=self.hidden_size + 1)
+        self.batchnorm1d = nn.BatchNorm1d(self.hidden_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
@@ -42,7 +45,15 @@ class LorentzPatchEmbeddings(nn.Module):
         x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
         x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
 
-        x_lor = self.manifold.expmap0(x)                                        # [B, N, patch_dim+1]
+        if self.normalization == "euclidean":
+            # x = x / self.hidden_size**0.5  # option 1
+            x = x / (x.norm(dim=-1, keepdim=True).clamp(min=1e-6))    # option 2
+            x_lor = self.manifold.expmap0(x)                                       
+
+        elif self.normalization == "lorentz":
+            x_lor = self.manifold.expmap0(x)                                        # [B, N, patch_dim+1]
+            x_lor = self.batchnorm(x_lor)                                           # [B, N, patch_dim+1]
+
         x_lor = self.projection(x_lor)                                          # [B, N, hidden_size+1]
         return x_lor
 
@@ -229,8 +240,8 @@ class LorentzTransformerBlock(nn.Module):
         )
 
         self.mlp = LorentzMLP(config)
-        self.layernorm1 = LorentzLayerNorm(manifold=self.manifold, dim=d)
-        self.layernorm2 = LorentzLayerNorm(manifold=self.manifold, dim=d)
+        self.layernorm1 = LorentzBatchNorm(manifold=self.manifold, dim=D)
+        self.layernorm2 = LorentzBatchNorm(manifold=self.manifold, dim=D)
 
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))

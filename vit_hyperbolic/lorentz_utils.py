@@ -64,3 +64,40 @@ class LorentzLayerNorm(nn.Module):
         out = self.manifold.gyro_add(beta_point, x_scaled)
 
         return out
+
+class LorentzBatchNorm(nn.Module):
+    """
+    Lorentz batch normalization (Shi, et al.)
+    """
+    def __init__(self, manifold, dim, eps: float = 1e-6):
+        super().__init__()
+        self.manifold = manifold
+        self.dim = dim
+        self.eps = eps
+        self.beta = nn.Parameter(torch.zeros(self.dim - 1))   
+        self.gamma_raw = nn.Parameter(torch.tensor(0.0))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, D = x.shape # [B, N, D+1]
+
+        # Mean via Lorentz centroid
+        x_flat = x.reshape(1, B*N, D)               # [1, B*N, D+1]
+        mu = self.manifold.lorentz_midpoint(x_flat) # [1, D+1]
+
+        # Variance via mean squared Lorentz distance to mean
+        var = self.manifold.lorentz_variance(x_flat, mu, set_dim=-2)
+
+        # Center and scale
+        mu_exp = mu.unsqueeze(0)                                                # [1, 1, D+1]
+        x_centered = self.manifold.gyro_add(self.manifold.gyro_inv(mu_exp), x)  # [B, N, D+1]
+
+        # Scale
+        gamma = F.softplus(self.gamma_raw) + 1e-6
+        scale = gamma * torch.rsqrt(var + self.eps)
+        x_scaled = self.manifold.gyro_mul(scale, x_centered) 
+
+        # Shift
+        beta_point = self.manifold.expmap0_safe(self.beta.unsqueeze(0)).squeeze(0)  # [D+1]
+        beta_point = beta_point.view(1, 1, -1)                                      # [1, 1, D+1]
+        out = self.manifold.gyro_add(beta_point, x_scaled)                          # [B, N, D+1]
+        return out
