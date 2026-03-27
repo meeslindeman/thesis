@@ -70,7 +70,8 @@ class LorentzMHA(nn.Module):
                 out_features=self.head_lorentz_dim,     # D_head
                 manifold=self.manifold, 
                 reset_params=reset_params, 
-                a_default=a_default
+                a_default=a_default,
+                activation=nn.Identity()
             )
             for _ in range(self.num_heads)
         ])
@@ -80,7 +81,8 @@ class LorentzMHA(nn.Module):
                 out_features=self.head_lorentz_dim,
                 manifold=self.manifold, 
                 reset_params=reset_params, 
-                a_default=a_default
+                a_default=a_default,
+                activation=nn.Identity()
             )
             for _ in range(self.num_heads)
         ])
@@ -90,7 +92,8 @@ class LorentzMHA(nn.Module):
                 out_features=self.head_lorentz_dim, 
                 manifold=self.manifold, 
                 reset_params=reset_params, 
-                a_default=a_default
+                a_default=a_default,
+                activation=nn.Identity()
             )
             for _ in range(self.num_heads)
         ])
@@ -105,7 +108,8 @@ class LorentzMHA(nn.Module):
             out_features=self.out_dim + 1,      # 1 + out_dim 
             manifold=self.manifold, 
             reset_params=reset_params,
-            a_default=a_default
+            a_default=a_default,
+            activation=nn.Identity()
         ) 
         
         # Precompute log-radius scale for concat_logradius

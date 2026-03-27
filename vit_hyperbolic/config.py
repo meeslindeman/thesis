@@ -21,18 +21,16 @@ class Config:
     num_attention_heads: int = 4
     mlp_dim: int = 192
     dropout_rate: float = 0.0
-    initializer_range: float = 0.02
     image_size: int = 32
     num_classes: int = 10
     num_channels: int = 3
-    qkv_bias: bool = True
 
     # ablations
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
     embeddings: str = "lorentz"
     use_midpoint: bool = False
-    use_layer_norm: bool = False
+    use_layernorm: bool = False
     normalization: str = "euclidean" # "euclidean", "lorentz"
 
     # hyperbolic specifics

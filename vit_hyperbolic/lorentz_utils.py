@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 
 class LorentzDropout(nn.Module):
@@ -67,7 +68,7 @@ class LorentzLayerNorm(nn.Module):
 
 class LorentzBatchNorm(nn.Module):
     """
-    Lorentz batch normalization (Shi, et al.)
+    Lorentz batch normalization.
     """
     def __init__(self, manifold, dim, eps: float = 1e-6):
         super().__init__()
@@ -101,3 +102,41 @@ class LorentzBatchNorm(nn.Module):
         beta_point = beta_point.view(1, 1, -1)                                      # [1, 1, D+1]
         out = self.manifold.gyro_add(beta_point, x_scaled)                          # [B, N, D+1]
         return out
+
+
+class LorentzSoftNorm(nn.Module):
+    """
+    Lorentz soft normalization: f(x) = (cosh(c * tanh(rho/c)), sinh(c * tanh(rho/c)) * u_hat)
+    where rho is the geodesic distance to the origin and u_hat is the spatial direction.
+    """
+    def __init__(self, dim: int, init_c: float = None, eps: float = 1e-6):
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+
+        init_c = init_c if init_c is not None else math.sqrt(dim)
+        self.log_c = nn.Parameter(torch.tensor(math.log(init_c)))
+    
+    @property
+    def c(self) -> torch.Tensor:
+        return self.log_c.exp()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x0 = x[..., 0]    
+        x_sp = x[..., 1:]
+
+        # geodesic distance to origin
+        x0_safe = x0.clamp(min=1.0 + self.eps)
+        rho = torch.acosh(x0_safe)
+
+        # spatial direction
+        sp_norm = x_sp.norm(dim=-1, keepdim=True).clamp(min=self.eps)
+        u_hat = x_sp / sp_norm
+
+        c = self.c
+        f_rho = c * torch.tanh(rho / c)
+
+        new_x0  = torch.cosh(f_rho)                         
+        new_xsp = torch.sinh(f_rho).unsqueeze(-1) * u_hat
+
+        return torch.cat([new_x0.unsqueeze(-1), new_xsp], dim=-1)
