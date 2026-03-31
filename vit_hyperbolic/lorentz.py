@@ -381,7 +381,7 @@ class Lorentz(nn.Module):
             print(f"[{name}] on-manifold tol={tol} -> {(abs_err.max() < tol).item()}")
     
     @staticmethod
-    def _chk(t: torch.Tensor, tag: str):
+    def _check(t: torch.Tensor, tag: str):
         """Raise if non-finite values exist."""
         if not torch.isfinite(t).all():
             finite = t[torch.isfinite(t)]

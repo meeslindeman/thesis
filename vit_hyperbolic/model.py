@@ -8,7 +8,8 @@ from vit_hyperbolic.patches import Embeddings
 
 from vit_hyperbolic.lorentz import Lorentz
 from vit_hyperbolic.attention import LorentzMHA
-from vit_hyperbolic.lorentz_utils import LorentzDropout, LorentzSoftNorm, LorentzBatchNorm
+from vit_hyperbolic.layernorm import LorentzBatchNorm, LorentzSplitNorm
+from vit_hyperbolic.dropout import LorentzDropout
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -106,6 +107,7 @@ class LorentzEmbeddings(nn.Module):
             metrics["params/pos_space_norm_mean"] = float(pos_norm.mean().cpu())
             metrics["params/pos_space_norm_max"] = float(pos_norm.max().cpu())
 
+        x = self.dropout(x)
         return x, metrics
 
 
@@ -128,10 +130,12 @@ class LorentzMLP(nn.Module):
             a_default=config["a_default"],
             activation=nn.Identity()
         )
+        self.dropout = LorentzDropout(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
         x = self.fc2(x)
+        x = self.dropout(x)
         return x
 
 
@@ -155,16 +159,19 @@ class LorentzTransformerBlock(nn.Module):
             concat_mode=config["concat_mode"],
             reset_params=config["reset_params"],
             a_default=config["a_default"],
-            attn_mask=config.get("attn_mask", None)
+            attn_mask=config.get("attn_mask", None),
+            dropout_rate=config["dropout_rate"]
         )
 
         self.mlp = LorentzMLP(config)
 
-        self.layernorm1 = LorentzBatchNorm(manifold=self.manifold, dim=D)
-        self.layernorm2 = LorentzBatchNorm(manifold=self.manifold, dim=D)
+        self.batchnorm1 = LorentzBatchNorm(manifold=self.manifold, dim=D)
+        self.batchnorm2 = LorentzBatchNorm(manifold=self.manifold, dim=D)
 
-        self.softnorm1 = LorentzSoftNorm(dim=D)
-        self.softnorm2 = LorentzSoftNorm(dim=D)
+        self.layernorm1 = LorentzSplitNorm(dim=d)
+        self.layernorm2 = LorentzSplitNorm(dim=d)
+
+        self.dropout = LorentzDropout(config)
 
         self.res_scale_att = nn.Parameter(torch.tensor(0.1))
         self.res_scale_mlp = nn.Parameter(torch.tensor(0.1))
@@ -179,9 +186,10 @@ class LorentzTransformerBlock(nn.Module):
             metrics[f"{prefix}/r_in_max"] = r_in["max"]
 
         if self.use_layernorm:
-            x = self.softnorm1(x)
+            x = self.layernorm1(x)
 
         att_output = self.attention(x)
+        att_output = self.dropout(att_output)
 
         if self.skip_connection:
             if self.use_midpoint:
@@ -197,7 +205,7 @@ class LorentzTransformerBlock(nn.Module):
                 if return_metrics:
                     v_att = self.manifold.logmap(x.float(), att_output.float()).float()
                     v_att = self.manifold.proju(x.float(), v_att, dim=-1)
-                    v_att = v_att * self.res_scale_att.float()
+                    v_att = v_att * self.res_scale_att.float() if self.res_scale_att is torch.nn.Parameter else v_att * self.res_scale_att
                     upd = self.manifold.update_metrics(v_att)
                     metrics[f"{prefix}/att_update_mean"] = upd["mean"]
                     metrics[f"{prefix}/att_update_max"] = upd["max"]
@@ -209,7 +217,7 @@ class LorentzTransformerBlock(nn.Module):
                 metrics[f"{prefix}/att_update_max"] = float("nan")
 
         if self.use_layernorm:
-            x = self.softnorm2(x)
+            x = self.layernorm2(x)
 
         mlp_output = self.mlp(x)
 
@@ -227,7 +235,7 @@ class LorentzTransformerBlock(nn.Module):
                 if return_metrics:
                     v_mlp = self.manifold.logmap(x.float(), mlp_output.float()).float()
                     v_mlp = self.manifold.proju(x.float(), v_mlp, dim=-1)
-                    v_mlp = v_mlp * self.res_scale_mlp.float()
+                    v_mlp = v_mlp * self.res_scale_mlp.float() if self.res_scale_mlp is torch.nn.Parameter else v_mlp * self.res_scale_mlp
                     upd = self.manifold.update_metrics(v_mlp)
                     metrics[f"{prefix}/mlp_update_mean"] = upd["mean"]
                     metrics[f"{prefix}/mlp_update_max"] = upd["max"]
@@ -328,7 +336,7 @@ class LorentzViT(nn.Module):
                 metrics["embed/r_max"] = r["max"]
 
         elif self.embedding_space == "lorentz":
-            x_lor0, emb_metrics = self.embedding(x, return_metrics=return_metrics)                  # [B, N, D]
+            x_lor0, emb_metrics = self.embedding(x, return_metrics=return_metrics)                 
             if return_metrics:
                 metrics.update(emb_metrics)
 

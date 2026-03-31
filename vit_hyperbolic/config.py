@@ -36,8 +36,8 @@ class Config:
     # hyperbolic specifics
     curvature: float = 0.1
     head_mode: str = "split_concat"
-    concat_mode: str = "logradius"
-    compute_scores: str = "lorentz_inner"
+    concat_mode: str = "logradius" # "direct", "logradius"
+    compute_scores: str = "lorentz_inner" # "signed_dist", "lorentz_inner"
     reset_params: str = "lorentz_kaiming"
     skip_connection: bool = False
     a_default: float = 0.0

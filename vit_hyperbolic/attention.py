@@ -23,7 +23,8 @@ class LorentzMHA(nn.Module):
             out_dim: int | None = None,
             reset_params: str = "lorentz_kaiming",
             a_default: float = 0.0,
-            attn_mask: torch.Tensor | None = None
+            attn_mask: torch.Tensor | None = None,
+            dropout_rate: float = 0.0
         ) -> None:
         super().__init__()
 
@@ -97,6 +98,8 @@ class LorentzMHA(nn.Module):
             )
             for _ in range(self.num_heads)
         ])
+
+        self.dropout = nn.Dropout(dropout_rate)
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:
@@ -228,6 +231,7 @@ class LorentzMHA(nn.Module):
 
         # Softmax weights [B, H, N, N]
         attn = F.softmax(scores, dim=-1)  
+        attn = self.dropout(attn)
 
         # Lorentz-valued aggregation (per head)
         # [B, H, N, D_head]
