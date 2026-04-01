@@ -1,12 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import math
+
 
 class LorentzDropout(nn.Module):
-    """
-    Lorentz dropout (Shi, et al.).
-    """
     def __init__(self, config):
         super().__init__()
         self.manifold = config["manifold"]

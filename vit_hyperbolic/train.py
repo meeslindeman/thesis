@@ -45,8 +45,7 @@ def main():
             optimizer,
             loss_fn,
             device,
-            detect_anomaly=cfg.detect_anomaly,
-            check_metrics=cfg.check_metrics,
+            detect_anomaly=cfg.detect_anomaly
         )
         acc, test_loss = evaluate(model, testloader, loss_fn, device)
 

@@ -12,7 +12,6 @@ class Config:
 
     # debug / checks
     detect_anomaly: bool = False
-    check_metrics: bool = False
 
     # model (LorentzViT)
     patch_size: int = 4

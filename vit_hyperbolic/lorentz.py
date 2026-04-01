@@ -4,11 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional, Union
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from typing import Optional
 
 
 class Lorentz(nn.Module):
@@ -80,7 +76,7 @@ class Lorentz(nn.Module):
         k   = self.k().to(dtype=x.dtype, device=x.device)
         xf  = x.float()
         yf  = y.float()
-        ip  = self._inner_stable(xf, yf)
+        ip  = self.inner_stable(xf, yf)
         alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
         return (torch.acosh(alpha) / torch.sqrt(k.float())).to(x.dtype)
 
@@ -392,34 +388,3 @@ class Lorentz(nn.Module):
                 f"NON-FINITE at {tag}: shape={tuple(t.shape)} "
                 f"finite_min={fin_min} finite_max={fin_max} bad_count={bad}"
             )
-
-    @staticmethod
-    def _stat(t: torch.Tensor, tag: str):
-        """Optional magnitude warning."""
-        finite = t[torch.isfinite(t)]
-        if finite.numel():
-            m = float(finite.abs().max())
-            if m > 1e6:
-                print(f"[warn] {tag} |max|={m:.3e}")
-
-    def radius_metrics(self, x: torch.Tensor) -> dict:
-        with torch.no_grad():
-            xf = x.detach().float()
-            k = self.k().float()
-            sqrt_k = torch.sqrt(k)
-            x0 = xf[..., 0]
-            r = torch.acosh((sqrt_k * x0).clamp_min(1.0 + 1e-6)) / sqrt_k
-            return {
-                "mean": float(r.mean().cpu()),
-                "max": float(r.max().cpu()),
-            }
-
-    def update_metrics(self, v: torch.Tensor) -> dict:
-        with torch.no_grad():
-            vf = v.detach().float()
-            vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(0.0).squeeze(-1)
-            vnorm = torch.sqrt(vv)
-            return {
-                "mean": float(vnorm.mean().cpu()),
-                "max": float(vnorm.max().cpu()),
-            }

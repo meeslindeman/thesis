@@ -7,8 +7,10 @@ from typing import Literal
 from vit_hyperbolic.lorentz import Lorentz
 from layers.LLinear import LorentzFullyConnected
 
+
 HeadMode = Literal["full_midpoint", "split_concat"]
 ConcatMode = Literal["direct", "logradius"]
+
 
 class LorentzMHA(nn.Module):
     def __init__(
