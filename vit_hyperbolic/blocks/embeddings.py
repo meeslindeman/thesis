@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import math
 
 from vit_hyperbolic.blocks.layernorm import LorentzBatchNorm, LorentzSplitNorm
 from vit_hyperbolic.blocks.dropout import LorentzDropout
@@ -14,6 +16,7 @@ class LorentzPatchEmbeddings(nn.Module):
         self.num_channels = config["num_channels"]
         self.hidden_size = config["hidden_size"]
         self.normalization = config["normalization"]
+        self.pre_exp_scale = config["pre_exp_scale"]
 
         self.manifold = config["manifold"]
 
@@ -22,6 +25,9 @@ class LorentzPatchEmbeddings(nn.Module):
         self.num_patches = self.grid_size * self.grid_size
 
         patch_dim = self.patch_size * self.patch_size * self.num_channels
+
+        self.log_scale = nn.Parameter(torch.tensor(math.log(self.pre_exp_scale), dtype=torch.float32)) 
+
         self.projection = LorentzFullyConnected(
             in_features=patch_dim + 1, 
             out_features=config["hidden_size"] + 1,
@@ -29,7 +35,26 @@ class LorentzPatchEmbeddings(nn.Module):
             reset_params=config["reset_params"],
             a_default=config["a_default"]
         )
-        self.batchnorm = LorentzBatchNorm(manifold=config["manifold"], dim=config["hidden_size"] + 1)
+        self.batchnorm = LorentzBatchNorm(
+            manifold=config["manifold"], 
+            dim=config["hidden_size"] + 1
+        )
+
+    def normalize_pre_exp(self, x):
+        if self.normalization == "none":
+            return x
+
+        elif self.normalization == "euclidean_unit":
+            return x / x.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+
+        elif self.normalization == "euclidean_rms":
+            return x / (self.hidden_size ** 0.5)
+        
+        elif self.normalization == "euclidean_scale":
+            return self.log_scale.exp() * x
+
+        else:
+            raise ValueError(f"Invalid normalization: {self.normalization}. Must be 'none', 'euclidean_unit', 'euclidean_rms', or 'euclidean_scale'.")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
@@ -41,16 +66,17 @@ class LorentzPatchEmbeddings(nn.Module):
         x = x.permute(0, 2, 4, 3, 5, 1)                             # [B, Gh, Gw, p, p, C]
         x = x.reshape(B, self.num_patches, p * p * C)               # [B, N, patch_dim]
 
-        if self.normalization == "euclidean":
-            # x = x / self.hidden_size**0.5 
-            x = x / (x.norm(dim=-1, keepdim=True).clamp(min=1e-6))   
-            x_lor = self.manifold.expmap0(x)                                       
+        x_euc = self.normalize_pre_exp(x)
 
-        elif self.normalization == "lorentz":
+        if self.normalization == "lorentz":
             x_lor = self.manifold.expmap0(x)                                       
-            x_lor = self.batchnorm(x_lor)                                          
+            x_lor = self.batchnorm(x_lor)    
+        elif self.normalization == "projection":
+            x_lor = self.manifold.projection_space_orthogonal(x)
+        else:
+            x_lor = self.manifold.expmap0(x_euc)   
 
-        x_lor = self.projection(x_lor)                                          
+        x_lor = self.projection(x_lor)         
         return x_lor
 
 
