@@ -38,7 +38,7 @@ import math
 
 #         return out
 
-class LorentzLayerNorm(nn.Module):
+class LorentzLayerNormTheirs(nn.Module):
     """
     Lorentz Layer Normalization with hyperbolic centroid and Fréchet variance.
     """
@@ -231,3 +231,93 @@ class LorentzSplitNorm(nn.Module):
         new_x0 = torch.cosh(f_rho)
         new_xsp = torch.sinh(f_rho).unsqueeze(-1) * u_prime
         return torch.cat([new_x0.unsqueeze(-1), new_xsp], dim=-1)
+
+class LorentzNorm(nn.Module):
+    """
+    Hyperbolic LayerNorm analog — fully geodesic, no tangent space excursions.
+
+    Steps:
+      1. Lorentz centroid (closed-form barycenter)
+      2. Geodesic distances to centroid
+      3. Per-point interpolation factor t from distance distribution
+      4. Geodesic interpolation via gyro-scalar multiplication:
+             x_norm = centroid ⊕ r * ((-centroid) ⊕ x)
+         where r = (1 - t) scales the geodesic offset from centroid
+      5. Learnable geodesic scaling via gyro-scalar (gamma) + gyro-translation (beta)
+    """
+
+    def __init__(
+        self,
+        manifold,
+        affine: bool = True,
+        eps: float = 1e-8,
+    ) -> None:
+        super().__init__()
+        self.manifold = manifold
+        self.eps = eps
+
+        if affine:
+            # Scalar in (0, inf): scales geodesic distance from centroid
+            self.gamma = nn.Parameter(torch.ones(1))
+            # Point on manifold: geodesic bias
+            # Initialized at origin of hyperboloid
+        else:
+            self.gamma = None
+
+    def _centroid(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (..., N, d+1) -> (..., d+1)"""
+        return self.manifold.lorentz_midpoint(x)
+
+    def _geodesic_dist(self, x: torch.Tensor, mu: torch.Tensor) -> torch.Tensor:
+        """
+        x:  (..., N, d+1)
+        mu: (..., d+1)
+        returns: (..., N, 1)
+        """
+        mu_exp = mu.unsqueeze(-2).expand_as(x)
+        return self.manifold.lorentz_distance(x, mu_exp)
+
+    def _interp_factor(self, dists: torch.Tensor) -> torch.Tensor:
+        """
+        t in [0,1]: how much to pull each point toward centroid.
+        Outliers (large dist) get t closer to 1 -> pulled harder.
+        """
+        mu_d  = dists.mean(dim=-2, keepdim=True).clamp(min=self.eps)
+        std_d = dists.std(dim=-2, keepdim=True).clamp(min=self.eps)
+        return 1.0 - torch.sigmoid((dists - mu_d) / std_d)   # (..., N, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (..., N, d+1) on hyperboloid"""
+        with torch.autocast(device_type="cuda", enabled=False):
+            xf = x.float()
+
+            # 1. Centroid
+            mu = self._centroid(xf)                              # (..., d+1)
+            mu_exp = mu.unsqueeze(-2).expand_as(xf)             # (..., N, d+1)
+
+            # 2 & 3. Distances + interpolation factor
+            dists = self._geodesic_dist(xf, mu)                  # (..., N, 1)
+            t     = self._interp_factor(dists)                   # (..., N, 1)
+
+            # 4. Purely geodesic interpolation via gyro operations:
+            #    - translate x into centroid's frame: delta = (-mu) ⊕ x
+            #    - scale the geodesic offset: r * delta  (r = 1-t)
+            #    - translate back: mu ⊕ (r * delta)
+            delta   = self.manifold.gyro_add(
+                self.manifold.gyro_inv(mu_exp), xf
+            )                                                    # (..., N, d+1)
+            r       = (1.0 - t)                                  # (..., N, 1)
+            scaled  = self.manifold.gyro_mul(r, delta)           # (..., N, d+1)
+            out     = self.manifold.gyro_add(mu_exp, scaled)     # (..., N, d+1)
+
+            # 5. Learnable geodesic scaling (optional)
+            #    Scales each point's geodesic distance from centroid by gamma
+            if self.gamma is not None:
+                delta2  = self.manifold.gyro_add(
+                    self.manifold.gyro_inv(mu_exp), out
+                )
+                out = self.manifold.gyro_add(
+                    mu_exp, self.manifold.gyro_mul(self.gamma, delta2)
+                )
+
+        return out.to(x.dtype)

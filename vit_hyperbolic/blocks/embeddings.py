@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import math
 
 from vit_hyperbolic.blocks.layernorm import LorentzBatchNorm, LorentzSplitNorm
-from vit_hyperbolic.blocks.dropout import LorentzDropout
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -100,7 +99,6 @@ class LorentzEmbeddings(nn.Module):
         pos = torch.randn(1, n_tokens, config["hidden_size"]) / config["hidden_size"]**0.5
         
         self.pos_space = nn.Parameter(pos)
-        self.dropout = LorentzDropout(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embeddings(x)
@@ -113,7 +111,7 @@ class LorentzEmbeddings(nn.Module):
         pos_lor = self.manifold.expmap0(self.pos_space)
         x = self.manifold.gyro_add(x, pos_lor)
 
-        x = self.dropout(x)
+        # INSERT DROPOUT
         return x
 
 

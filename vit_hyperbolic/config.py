@@ -28,9 +28,10 @@ class Config:
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
     embeddings: str = "lorentz"
-    use_midpoint: bool = False
-    use_layernorm: bool = False
-    normalization: str = "euclidean" # "euclidean", "lorentz"
+    residual: str = "geodesic"
+    layernorm: bool = False
+    dropout: bool = False
+    normalization: str = "euclidean_scale"
 
     # hyperbolic specifics
     curvature: float = 0.1
@@ -38,7 +39,6 @@ class Config:
     concat_mode: str = "logradius" # "direct", "logradius"
     compute_scores: str = "lorentz_inner" # "signed_dist", "lorentz_inner"
     reset_params: str = "lorentz_kaiming"
-    skip_connection: bool = False
     a_default: float = 0.0
     pre_exp_scale: float = 0.4
 

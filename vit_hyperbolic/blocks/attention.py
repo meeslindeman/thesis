@@ -101,7 +101,7 @@ class LorentzMHA(nn.Module):
             for _ in range(self.num_heads)
         ])
 
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(0.1) #TODO: change to config
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:

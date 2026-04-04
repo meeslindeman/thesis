@@ -358,7 +358,7 @@ class Lorentz(nn.Module):
         return -time * time + (space * space).sum(dim=-1, keepdim=True)
 
     def _is_on_manifold(self, x: torch.Tensor, name: str = "", tol: float = 1e-2):
-        """Debug: report hyperboloid constraint error and sheet check."""
+        """Debug: report hyperboloid constraint error and sheet check, only if violated."""
         with torch.no_grad():
             xf = x.float()
             k = self.k().float()
@@ -371,10 +371,15 @@ class Lorentz(nn.Module):
             x0 = xf[..., 0]
             sheet_bad = (x0 <= 0)
 
-            print(f"[{name}] max abs err {abs_err.max().item():.3e}, mean abs err {abs_err.mean().item():.3e}")
-            print(f"[{name}] max rel err {rel_err.max().item():.3e}, mean rel err {rel_err.mean().item():.3e}")
-            print(f"[{name}] sheet bad frac {(sheet_bad.float().mean().item()):.3e}, x0 min {x0.min().item():.3e}")
-            print(f"[{name}] on-manifold tol={tol} -> {(abs_err.max() < tol).item()}")
+            violated = (abs_err.max() >= tol) or sheet_bad.any()
+
+            if violated:
+                print(f"[{name}] max abs err {abs_err.max().item():.3e}, mean abs err {abs_err.mean().item():.3e}")
+                print(f"[{name}] max rel err {rel_err.max().item():.3e}, mean rel err {rel_err.mean().item():.3e}")
+                print(f"[{name}] sheet bad frac {(sheet_bad.float().mean().item()):.3e}, x0 min {x0.min().item():.3e}")
+                print(f"[{name}] on-manifold tol={tol} -> False")
+
+            return not violated
     
     @staticmethod
     def _check(t: torch.Tensor, tag: str):
