@@ -52,6 +52,8 @@ data/
 *.job
 wandb/
 sweeps/
+
+.claude
 HierVision/
 checkpoints/
 checkpoints_final/
