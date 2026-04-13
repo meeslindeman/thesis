@@ -26,30 +26,36 @@ def build_parser(defaults: Config | None = None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
 
     for f in fields(Config):
+        if not f.init:
+            continue
+
         name = f.name
         t = f.type
         default_val = getattr(defaults, name)
 
         if t is bool:
-            # --flag / --no-flag
             group = p.add_mutually_exclusive_group(required=False)
             group.add_argument(f"--{name}", dest=name, action="store_true")
             group.add_argument(f"--no-{name}", dest=name, action="store_false")
             p.set_defaults(**{name: default_val})
         else:
-            # allow passing None for device by omitting
             p.add_argument(f"--{name}", type=t if t is not None else str, default=default_val)
 
     return p
 
 
+
 def cfg_from_args(args: argparse.Namespace) -> Config:
-    cfg = Config()
-    for f in fields(Config):
-        setattr(cfg, f.name, getattr(args, f.name))
-    # normalize device
+    init_kwargs = {
+        f.name: getattr(args, f.name)
+        for f in fields(Config)
+        if f.init
+    }
+    cfg = Config(**init_kwargs)
+
     if cfg.device == "auto":
         cfg.device = "cuda" if torch.cuda.is_available() else "cpu"
+
     return cfg
 
 
@@ -74,6 +80,7 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_an
         loss = loss_fn(logits, labels)
 
         loss.backward()
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item() * images.size(0)

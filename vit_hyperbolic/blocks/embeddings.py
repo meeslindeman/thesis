@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-from vit_hyperbolic.blocks.layernorm import LorentzBatchNorm, LorentzSplitNorm
 from layers.LLinear import LorentzFullyConnected
+from vit_hyperbolic.blocks.dropout import IntrinsicDropout
 
 
 class LorentzPatchEmbeddings(nn.Module):
@@ -34,26 +34,20 @@ class LorentzPatchEmbeddings(nn.Module):
             reset_params=config["reset_params"],
             a_default=config["a_default"]
         )
-        self.batchnorm = LorentzBatchNorm(
-            manifold=config["manifold"], 
-            dim=config["hidden_size"] + 1
-        )
 
     def normalize_pre_exp(self, x):
         if self.normalization == "none":
-            return x
-
+            return x # will break
         elif self.normalization == "euclidean_unit":
             return x / x.norm(dim=-1, keepdim=True).clamp(min=1e-6)
-
         elif self.normalization == "euclidean_rms":
             return x / (self.hidden_size ** 0.5)
-        
         elif self.normalization == "euclidean_scale":
             return self.log_scale.exp() * x
-
+        elif self.normalization == "projection":
+            return x  # handled separately, no pre-exp normalization
         else:
-            raise ValueError(f"Invalid normalization: {self.normalization}. Must be 'none', 'euclidean_unit', 'euclidean_rms', or 'euclidean_scale'.")
+            raise ValueError(f"Invalid normalization: {self.normalization}.")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
@@ -67,10 +61,7 @@ class LorentzPatchEmbeddings(nn.Module):
 
         x_euc = self.normalize_pre_exp(x)
 
-        if self.normalization == "lorentz":
-            x_lor = self.manifold.expmap0(x)                                       
-            x_lor = self.batchnorm(x_lor)    
-        elif self.normalization == "projection":
+        if self.normalization == "projection":
             x_lor = self.manifold.projection_space_orthogonal(x)
         else:
             x_lor = self.manifold.expmap0(x_euc)   
@@ -100,6 +91,8 @@ class LorentzEmbeddings(nn.Module):
         
         self.pos_space = nn.Parameter(pos)
 
+        self.dropout = IntrinsicDropout(config)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embeddings(x)
         batch_size = x.shape[0]
@@ -109,9 +102,7 @@ class LorentzEmbeddings(nn.Module):
             x = torch.cat((cls, x), dim=1)
 
         pos_lor = self.manifold.expmap0(self.pos_space)
-        x = self.manifold.gyro_add(x, pos_lor)
-
-        # INSERT DROPOUT
+        # x = self.dropout(x)
         return x
 
 

@@ -1,4 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+DATASET_CONFIGS = {
+    "cifar10":  {"image_size": 32,  "num_classes": 10,  "num_channels": 3},
+    "cifar100": {"image_size": 32,  "num_classes": 100, "num_channels": 3},
+    # "tiny_imagenet": {"image_size": 64, "num_classes": 200, "num_channels": 3},
+}
 
 @dataclass
 class Config:
@@ -7,11 +13,19 @@ class Config:
     epochs: int = 30
     lr: float = 1e-3
     weight_decay: float = 0.0
-    device: str = "auto" 
+    device: str = "auto"
     seed: int = 0
+
+    # dataset
+    dataset: str = "cifar10"
+    image_size: int = field(init=False)
+    num_classes: int = field(init=False)
+    num_channels: int = field(init=False)
 
     # debug / checks
     detect_anomaly: bool = False
+    check_metrics: bool = False
+    check_nan: bool = False
 
     # model (LorentzViT)
     patch_size: int = 4
@@ -20,9 +34,6 @@ class Config:
     num_attention_heads: int = 4
     mlp_dim: int = 192
     dropout_rate: float = 0.0
-    image_size: int = 32
-    num_classes: int = 10
-    num_channels: int = 3
 
     # ablations
     final_op: str = "pooling"
@@ -36,12 +47,23 @@ class Config:
     # hyperbolic specifics
     curvature: float = 0.1
     head_mode: str = "split_concat"
-    concat_mode: str = "logradius" # "direct", "logradius"
-    compute_scores: str = "lorentz_inner" # "signed_dist", "lorentz_inner"
+    concat_mode: str = "logradius"
+    compute_scores: str = "lorentz_inner"
+
+    # layer init
     reset_params: str = "lorentz_kaiming"
     a_default: float = 0.0
+    use_weight_norm: bool = False
+
+    # embedding init
     pre_exp_scale: float = 0.4
 
     # wandb
     group: str = "default"
     name: str = "run"
+
+    def __post_init__(self):
+        if self.dataset not in DATASET_CONFIGS:
+            raise ValueError(f"Unknown dataset '{self.dataset}'. Available: {list(DATASET_CONFIGS)}")
+        for k, v in DATASET_CONFIGS[self.dataset].items():
+            setattr(self, k, v)

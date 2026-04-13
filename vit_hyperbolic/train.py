@@ -22,9 +22,11 @@ def main():
 
     run_start = time.perf_counter()
 
-    from cifar10_utils import get_cifar10, get_dataloader
-    dataset = get_cifar10(data_dir="data/", validation_size=5000)
+    from data_utils import get_dataset, get_dataloader
+
+    dataset, _ = get_dataset(cfg.dataset, data_dir="data/", validation_size=5000)
     dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
+
     trainloader = dataloaders["train"]
     testloader = dataloaders["test"]
 
@@ -38,6 +40,17 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     loss_fn = nn.CrossEntropyLoss()
 
+    # warmup_epochs = 5
+    # warmup = torch.optim.lr_scheduler.LinearLR(
+    #     optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_epochs
+    # )
+    # cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=cfg.epochs - warmup_epochs, eta_min=1e-6
+    # )
+    # scheduler = torch.optim.lr_scheduler.SequentialLR(
+    #     optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs]
+    # )
+
     for epoch in range(cfg.epochs):
         train_loss = train_one_epoch(
             model,
@@ -47,13 +60,16 @@ def main():
             device,
             detect_anomaly=cfg.detect_anomaly
         )
+        # scheduler.step()
+        train_acc = evaluate(model, trainloader, loss_fn, device)[0]
         acc, test_loss = evaluate(model, testloader, loss_fn, device)
 
         print(
             f"Epoch: {epoch + 1}, "
             f"Train loss: {train_loss:.4f}, "
+            f"Train accuracy: {train_acc:.4f}, "
             f"Test loss: {test_loss:.4f}, "
-            f"Accuracy: {acc:.4f}"
+            f"Test accuracy: {acc:.4f}"
         )
 
     total_time = time.perf_counter() - run_start

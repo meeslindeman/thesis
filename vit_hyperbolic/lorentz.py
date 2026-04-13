@@ -302,16 +302,16 @@ class Lorentz(nn.Module):
             out = self.expmap(xf, v)
         return out.to(x.dtype)
 
-    def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 0.5, wy: float = 0.5, eps: float = 1e-9) -> torch.Tensor:
-        """LResNet-style residual via ambient interpolation + renormalization (He et al.)."""
-        z = wx * x + wy * y
-        t = z[..., :1]
-        s = z[..., 1:]
-        zz = -t * t + (s * s).sum(dim=-1, keepdim=True)  # negative for timelike
-
-        k = self.k()
-        scale = torch.sqrt(torch.clamp((1.0 / k) / (-zz + eps), min=eps))
-        return scale * z
+    def tangent_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.1) -> torch.Tensor:
+        """Residual: Exp_0(Log_0(x) + weight * Log_0(y))."""
+        with torch.autocast(device_type="cuda", enabled=False):
+            xf = x.float()
+            yf = y.float()
+            log_x = self.logmap0(xf)
+            log_y = self.logmap0(yf)
+            combined = log_x + weight * log_y
+            out = self.expmap0(combined[..., 1:])
+        return out.to(x.dtype)
 
     def gyro_add(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Gyro-addition via Exp_x( PT_{0->x}( Log_0(y) ) ) as in (Shi, et al.)."""

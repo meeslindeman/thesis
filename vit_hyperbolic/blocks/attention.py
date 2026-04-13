@@ -25,6 +25,7 @@ class LorentzMHA(nn.Module):
             out_dim: int | None = None,
             reset_params: str = "lorentz_kaiming",
             a_default: float = 0.0,
+            use_weight_norm: bool = False,
             attn_mask: torch.Tensor | None = None,
             dropout_rate: float = 0.0
         ) -> None:
@@ -101,7 +102,7 @@ class LorentzMHA(nn.Module):
             for _ in range(self.num_heads)
         ])
 
-        self.dropout = nn.Dropout(0.1) #TODO: change to config
+        self.dropout = nn.Dropout(dropout_rate)
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:
