@@ -349,6 +349,27 @@ class Lorentz(nn.Module):
         out = self.expmap(base_point=o, v=tv0)
         return out
 
+    def _metrics(self, x: torch.Tensor) -> dict:
+        """Return useful geometric metrics for a batch of points on the manifold."""
+        with torch.no_grad():
+            xf = x.float()
+            k = self.k().float()
+
+            # Euclidean norm of spatial components
+            spatial_norm = xf[..., 1:].norm(dim=-1)
+
+            # Hyperbolic distance to origin
+            hyp_dist = (torch.acosh(
+                (k.sqrt() * xf[..., 0]).clamp_min(1.0 + self.eps)
+            ) / k.sqrt())
+
+            return {
+                "norm_E_mean": spatial_norm.mean().item(),
+                "norm_E_max":  spatial_norm.max().item(),
+                "hyp_dist_mean": hyp_dist.mean().item(),
+                "hyp_dist_max":  hyp_dist.max().item(),
+            }
+
     @staticmethod
     def _minkowski_norm_sq(x: torch.Tensor) -> torch.Tensor:
         # <x,x>_L = -t^2 + ||space||^2
