@@ -99,7 +99,7 @@ class LorentzTransformerBlock(nn.Module):
             x = self.manifold.geodesic_residual(residual, att_output, weight=self.res_scale_att)
         elif self.residual == "gyroadd":
             x = self.manifold.gyro_add(residual, att_output)
-            # x = self.layernorm1(x)
+            x = self.layernorm1(x)
         elif self.residual == "midpoint":
             xs2 = torch.stack([residual, att_output], dim=-2)
             alpha = torch.sigmoid(self.res_scale_att)  # enforce (0,1)
@@ -125,7 +125,7 @@ class LorentzTransformerBlock(nn.Module):
             out = self.manifold.geodesic_residual(residual, mlp_output, weight=self.res_scale_mlp)
         elif self.residual == "gyroadd":
             out = self.manifold.gyro_add(residual, mlp_output)
-            # out = self.layernorm1(out)
+            out = self.layernorm2(out)
         elif self.residual == "midpoint":
             xs2 = torch.stack([residual, mlp_output], dim=-2)
             alpha = torch.sigmoid(self.res_scale_att)  # enforce (0,1)
