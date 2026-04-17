@@ -55,13 +55,13 @@ class Lorentz(nn.Module):
         to avoid cancellation between large time and space terms.
         Both x, y must be float32 and on the manifold.
         """
-        x0  = x[..., :1]
-        y0  = y[..., :1]
+        x0 = x[..., :1]
+        y0 = y[..., :1]
         x_s = x[..., 1:]
         y_s = y[..., 1:]
-        diff_sq  = ((x_s - y_s) ** 2).sum(dim=-1, keepdim=True)
-        xs_sq    = (x_s * x_s).sum(dim=-1, keepdim=True)
-        ys_sq    = (y_s * y_s).sum(dim=-1, keepdim=True)
+        diff_sq = ((x_s - y_s) ** 2).sum(dim=-1, keepdim=True)
+        xs_sq = (x_s * x_s).sum(dim=-1, keepdim=True)
+        ys_sq = (y_s * y_s).sum(dim=-1, keepdim=True)
         space_dot = (xs_sq + ys_sq - diff_sq) * 0.5
         return -x0 * y0 + space_dot
 
@@ -73,10 +73,10 @@ class Lorentz(nn.Module):
 
     def lorentz_distance(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """Lorentz distance: d(x,y) = (1/sqrt(k)) * arcosh(-k <x,y>_L)."""
-        k   = self.k().to(dtype=x.dtype, device=x.device)
-        xf  = x.float()
-        yf  = y.float()
-        ip  = self.inner_stable(xf, yf)
+        k = self.k().to(dtype=x.dtype, device=x.device)
+        xf = x.float()
+        yf = y.float()
+        ip = self.inner_stable(xf, yf)
         alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
         return (torch.acosh(alpha) / torch.sqrt(k.float())).to(x.dtype)
 
@@ -84,12 +84,12 @@ class Lorentz(nn.Module):
         """
         Squared geodesic distance: d_L(x,y)^2 = acosh( -k <x,y>_L )^2 / k
         """
-        k   = self.k().to(dtype=x.dtype, device=x.device)
-        xf  = x.float()
-        yf  = y.float()
-        ip  = self.inner_stable(xf, yf)
+        k = self.k().to(dtype=x.dtype, device=x.device)
+        xf = x.float()
+        yf = y.float()
+        ip = self.inner_stable(xf, yf)
         alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
-        ac  = torch.acosh(alpha)
+        ac = torch.acosh(alpha)
         return ((ac * ac) / k.float()).to(x.dtype)
 
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
@@ -312,6 +312,17 @@ class Lorentz(nn.Module):
             combined = log_x + weight * log_y
             out = self.expmap0(combined[..., 1:])
         return out.to(x.dtype)
+
+    def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 0.5, wy: float = 0.5, eps: float = 1e-9) -> torch.Tensor:
+        """LResNet-style residual via ambient interpolation + renormalization (He et al.)."""
+        z = wx * x + wy * y
+        t = z[..., :1]
+        s = z[..., 1:]
+        zz = -t * t + (s * s).sum(dim=-1, keepdim=True)  # negative for timelike
+
+        k = self.k()
+        scale = torch.sqrt(torch.clamp((1.0 / k) / (-zz + eps), min=eps))
+        return scale * z
 
     def gyro_add(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Gyro-addition via Exp_x( PT_{0->x}( Log_0(y) ) ) as in (Shi, et al.)."""
