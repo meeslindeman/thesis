@@ -27,7 +27,8 @@ class LorentzMHA(nn.Module):
             a_default: float = 0.0,
             use_weight_norm: bool = False,
             attn_mask: torch.Tensor | None = None,
-            dropout_rate: float = 0.0
+            dropout_rate: float = 0.0,
+            attn_dropout_rate: float = 0.0
         ) -> None:
         super().__init__()
 
@@ -75,7 +76,8 @@ class LorentzMHA(nn.Module):
                 manifold=self.manifold, 
                 reset_params=reset_params, 
                 a_default=a_default,
-                activation=nn.Identity()
+                activation=nn.Identity(),
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])
@@ -86,7 +88,8 @@ class LorentzMHA(nn.Module):
                 manifold=self.manifold, 
                 reset_params=reset_params, 
                 a_default=a_default,
-                activation=nn.Identity()
+                activation=nn.Identity(),
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])
@@ -97,12 +100,13 @@ class LorentzMHA(nn.Module):
                 manifold=self.manifold, 
                 reset_params=reset_params, 
                 a_default=a_default,
-                activation=nn.Identity()
+                activation=nn.Identity(),
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])
 
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(attn_dropout_rate)
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:
@@ -115,7 +119,8 @@ class LorentzMHA(nn.Module):
             manifold=self.manifold, 
             reset_params=reset_params,
             a_default=a_default,
-            activation=nn.Identity()
+            activation=nn.Identity(),
+            use_weight_norm=False
         ) 
         
         # Precompute log-radius scale for concat_logradius
@@ -146,7 +151,6 @@ class LorentzMHA(nn.Module):
 
     def _concat_heads_direct(self, x: torch.Tensor) -> torch.Tensor:
         # Qu, E., et al. (https://openreview.net/forum?id=NQi9U0YLW3)
-        # Recompute time coordinate to ensure output is on the manifold after concatenating spatial components.
         B, H, N, Dh = x.shape
         d_head = Dh - 1
         k = torch.as_tensor(self.manifold.k(), device=x.device, dtype=x.dtype)
@@ -157,9 +161,7 @@ class LorentzMHA(nn.Module):
 
         space_cat = space.reshape(B, N, H * d_head)  # [B, N, H*head_spatial_dim] = [B, N, spatial_dim]
 
-        # t'² = Σt_i² + (H-1)/k
-        time_sq_sum = (time ** 2).sum(dim=2)                # [B, N, H, 1] -> [B, N, 1]
-        time_sq_sum = time_sq_sum + (H - 1) / k  # [B, N, 1]
+        time_sq_sum = (time ** 2).sum(dim=2) - (H - 1) / k  # [B, N, 1]
         t_prime = torch.sqrt(time_sq_sum.clamp_min(1e-9))   # [B, N, 1]
 
         out = torch.cat([t_prime, space_cat], dim=-1)  # [B, N, 1+spatial_dim]
@@ -177,19 +179,17 @@ class LorentzMHA(nn.Module):
         time = x[..., :1]                       # [B, N, H, 1]
         space = x[..., 1:]                      # [B, N, H, head_spatial_dim]
 
-        # scale spatial components: ũi = s * ui
         space_scaled = (s * space)  # [B, N, H, head_spatial_dim]
         space_cat = space_scaled.reshape(B, N, H * d_head)  # [B, N, H*head_spatial_dim] = [B, N, spatial_dim]
 
-        # recompute time coordinate: t' = sqrt(1/K + s² * Σ(ti² + 1/K))
-        time_sq_plus_invk = (time ** 2) + (1.0 / k)  # [B, N, H, 1]
+        time_sq_plus_invk = (time ** 2) - (1.0 / k)  # [B, N, H, 1]
         time_sum = time_sq_plus_invk.sum(dim=2)      # [B, N, H, 1] -> [B, N, 1]
         t_prime = torch.sqrt((1.0 / k + s ** 2 * time_sum).clamp_min(1e-9))  # [B, N, 1]
 
         out = torch.cat([t_prime, space_cat], dim=-1)  # [B, N, 1+spatial_dim]
         return out
 
-    def forward(self, x: torch.Tensor, *, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *, attn_mask: torch.Tensor | None = None, return_attn: bool = False) -> torch.Tensor:
         B, N, D = x.shape
         if D != self.lorentz_dim:
             raise ValueError(f"Expected last dim {self.lorentz_dim}, got {D}")
@@ -237,8 +237,7 @@ class LorentzMHA(nn.Module):
         attn = self.dropout(attn)
 
         # Lorentz-valued aggregation (per head)
-        # [B, H, N, D_head]
-        out_heads = self.manifold.lorentz_midpoint(v, attn)  # [B, H, N, D_head]
+        out_heads = self.manifold.lorentz_centroid(v, attn)  # [B, H, N, D_head]
         
         # Fuse heads into a single Lorentz representation of full dim D = 1 + d
         if self.num_heads == 1:
@@ -264,8 +263,8 @@ class LorentzMHA(nn.Module):
             else:
                 raise ValueError(f"Unknown head_fusion mode: {self.head_fusion}")
 
+        out = self.W_o(out) # [B, N, D] -> [B, N, 1 + out_dim]
 
-        # Output projection in Lorentz space: [B, N, D] -> [B, N, 1 + out_dim]
-        out = self.W_o(out) 
-        
-        return out 
+        if return_attn:
+            return out, attn
+        return out

@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 DATASET_CONFIGS = {
     "cifar10":  {"image_size": 32,  "num_classes": 10,  "num_channels": 3},
     "cifar100": {"image_size": 32,  "num_classes": 100, "num_channels": 3},
-    # "tiny_imagenet": {"image_size": 64, "num_classes": 200, "num_channels": 3},
 }
 
 @dataclass
@@ -22,10 +21,8 @@ class Config:
     num_classes: int = field(init=False)
     num_channels: int = field(init=False)
 
-    # debug / checks
-    detect_anomaly: bool = False
-    check_metrics: bool = False
-    check_nan: bool = False
+    # early stopping (0 = disabled)
+    patience: int = 0
 
     # model (LorentzViT)
     patch_size: int = 4
@@ -34,20 +31,19 @@ class Config:
     num_attention_heads: int = 4
     mlp_dim: int = 192
     dropout_rate: float = 0.0
+    attn_dropout_rate: float = 0.1
 
     # ablations
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
-    embeddings: str = "lorentz"
-    residual: str = "geodesic"
+    residual_weight_init: float = 0.0 
+    residual_delta_init: float = 2.0
     layernorm: bool = False
-    dropout: bool = False
-    normalization: str = "euclidean_scale"
 
     # hyperbolic specifics
-    curvature: float = 0.1
+    curvature: float = 1.0
     head_mode: str = "split_concat"
-    concat_mode: str = "logradius"
+    concat_mode: str = "direct"
     compute_scores: str = "lorentz_inner"
 
     # layer init
@@ -55,12 +51,12 @@ class Config:
     a_default: float = 0.0
     use_weight_norm: bool = False
 
-    # embedding init
-    pre_exp_scale: float = 0.4
+    # loss
+    label_smoothing: float = 0.1
 
-    # wandb
-    group: str = "default"
-    name: str = "run"
+    # scheduler ("none", "cosine", "warmup_cosine")
+    scheduler: str = "none"
+    warmup_epochs: int = 5
 
     def __post_init__(self):
         if self.dataset not in DATASET_CONFIGS:

@@ -40,37 +40,22 @@ class IntrinsicDropout(nn.Module):
         if not self.training or self.p == 0.0:
             return x
 
-        D = x.shape[-1] - 1
+        x_spatial = x[..., 1:]
+        x_time = x[..., :1]
 
         mask = torch.bernoulli(
-            torch.full((D,), 1.0 - self.p, device=x.device, dtype=x.dtype)
+            torch.full(x_spatial.shape, 1.0 - self.p, device=x.device, dtype=x.dtype)
         )
 
-        if not (mask == 0).any():
-            return x
+        spatial_masked = x_spatial * mask
 
-        x_spatial = x[..., 1:]  # (..., D)
-        x_time = x[..., :1]     # (..., 1)
-
-        # Zero out dropped dimensions
-        spatial_masked = x_spatial * mask  # (..., D)
-
-        # Lorentzian norm squared of masked vector
-        norm_sq = -x_time**2 + (spatial_masked**2).sum(dim=-1, keepdim=True)  # (..., 1)
-
-        # Scale factor: c = sqrt(kappa * norm_sq) but norm_sq is negative
-        # so c = sqrt(-kappa * norm_sq) since ||x||_L^2 = 1/kappa means norm_sq = -1/kappa
         kappa = self.manifold.k().item()
-        c = torch.sqrt(-kappa * norm_sq)  # (..., 1)
-
+        norm_sq = -x_time**2 + (spatial_masked**2).sum(dim=-1, keepdim=True)
+        c = torch.sqrt(torch.clamp(-kappa * norm_sq, min=1e-8))
         return torch.cat([x_time, spatial_masked], dim=-1) / c
 
 
 class LorentzDropConnect(nn.Module):
-    """
-    Applies dropout to the weight matrix V of a LorentzFullyConnected layer,
-    this is equivalent to randomly dropping entire hyperplanes in the output space."
-    """
     def __init__(self, layer: nn.Module, p: float = 0.0):
         super().__init__()
         self.layer = layer

@@ -1,10 +1,8 @@
-# TODO: Credit Ricardo
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional
+from typing import Optional, Union
 
 
 class Lorentz(nn.Module):
@@ -26,16 +24,19 @@ class Lorentz(nn.Module):
         return self.expmap0(x)
 
     def normL(self, x: torch.Tensor, metric: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Lorentz norm (uses metric diag([-1, 1, ..., 1]))."""
+        """Lorentz norm sqrt(-<x,x>_L) for points on the hyperboloid."""
         if metric is None:
-            metric = torch.ones(x.size(-1), device=x.device, dtype=x.dtype)
-        metric[0] = -1
-        return (x * x * metric).sum(dim=-1, keepdim=True).sqrt()
+            # diag(-1, 1, 1, ..., 1)
+            signs = x.new_ones(x.size(-1))
+            signs[0] = -1.0
+            inner = (x * x * signs).sum(dim=-1, keepdim=True)
+        else:
+            inner = (x * x * metric).sum(dim=-1, keepdim=True)
+        
+        return torch.sqrt(torch.clamp(-inner, min=0.0))
 
     def inner(self, u: torch.Tensor, v: Optional[torch.Tensor] = None, keepdim: bool = False, dim: int = -1) -> torch.Tensor:
-        """
-        Compute the Lorentz inner product <u,v>_L along the specified dimension.
-        """
+        """Compute the Lorentz inner product <u,v>_L along the specified dimension."""
         if v is None:
             v = u
 
@@ -55,13 +56,13 @@ class Lorentz(nn.Module):
         to avoid cancellation between large time and space terms.
         Both x, y must be float32 and on the manifold.
         """
-        x0 = x[..., :1]
-        y0 = y[..., :1]
+        x0  = x[..., :1]
+        y0  = y[..., :1]
         x_s = x[..., 1:]
         y_s = y[..., 1:]
-        diff_sq = ((x_s - y_s) ** 2).sum(dim=-1, keepdim=True)
-        xs_sq = (x_s * x_s).sum(dim=-1, keepdim=True)
-        ys_sq = (y_s * y_s).sum(dim=-1, keepdim=True)
+        diff_sq  = ((x_s - y_s) ** 2).sum(dim=-1, keepdim=True)
+        xs_sq    = (x_s * x_s).sum(dim=-1, keepdim=True)
+        ys_sq    = (y_s * y_s).sum(dim=-1, keepdim=True)
         space_dot = (xs_sq + ys_sq - diff_sq) * 0.5
         return -x0 * y0 + space_dot
 
@@ -73,10 +74,10 @@ class Lorentz(nn.Module):
 
     def lorentz_distance(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """Lorentz distance: d(x,y) = (1/sqrt(k)) * arcosh(-k <x,y>_L)."""
-        k = self.k().to(dtype=x.dtype, device=x.device)
-        xf = x.float()
-        yf = y.float()
-        ip = self.inner_stable(xf, yf)
+        k   = self.k().to(dtype=x.dtype, device=x.device)
+        xf  = x.float()
+        yf  = y.float()
+        ip  = self.inner_stable(xf, yf)
         alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
         return (torch.acosh(alpha) / torch.sqrt(k.float())).to(x.dtype)
 
@@ -84,12 +85,12 @@ class Lorentz(nn.Module):
         """
         Squared geodesic distance: d_L(x,y)^2 = acosh( -k <x,y>_L )^2 / k
         """
-        k = self.k().to(dtype=x.dtype, device=x.device)
-        xf = x.float()
-        yf = y.float()
-        ip = self.inner_stable(xf, yf)
+        k   = self.k().to(dtype=x.dtype, device=x.device)
+        xf  = x.float()
+        yf  = y.float()
+        ip  = self.inner_stable(xf, yf)
         alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
-        ac = torch.acosh(alpha)
+        ac  = torch.acosh(alpha)
         return ((ac * ac) / k.float()).to(x.dtype)
 
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
@@ -97,6 +98,23 @@ class Lorentz(nn.Module):
         k = self.k()
         time = torch.sqrt(torch.clamp(1.0 / self.k() + x.pow(2).sum(dim=manifold_dim, keepdim=True), min=self.eps))
         return torch.cat([time, x], dim=manifold_dim)
+
+    def radial_projection(self, x: torch.Tensor) -> torch.Tensor:
+        """Project a time-like vector onto the hyperboloid via radial scaling."""
+        k = self.k().to(dtype=x.dtype, device=x.device)
+        norm_L = self.normL(x).clamp_min(self.eps)          # sqrt(-<x,x>_L), [..., 1]
+        sign_t = torch.sign(x[..., :1])
+        sign_t = torch.where(sign_t == 0, torch.ones_like(sign_t), sign_t)
+        return (sign_t / (torch.sqrt(k) * norm_L)) * x
+
+    def expmap_origin(self, v: torch.Tensor) -> torch.Tensor:
+        """Lift space components v onto the hyperboloid via simplified exp map at origin."""
+        c = self.k()
+        v_norm = v.norm(dim=-1, keepdim=True).clamp_min(self.eps)
+        sqrt_c = torch.sqrt(c)
+        x_space = (torch.sinh(sqrt_c * v_norm) / (sqrt_c * v_norm)) * v
+        x_time = torch.sqrt(1.0 / c + x_space.pow(2).sum(dim=-1, keepdim=True))
+        return torch.cat([x_time, x_space], dim=-1)
 
     def projx(self, x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
         """Project an ambient point to the hyperboloid by adjusting time coordinate only."""
@@ -191,20 +209,6 @@ class Lorentz(nn.Module):
         if bp.dim() < y.dim():
             bp = bp.unsqueeze(-2)
 
-        # # <bp, y>_L
-        # inner = -bp[..., 0] * y[..., 0] + torch.sum(bp[..., 1:] * y[..., 1:], dim=-1)
-
-        # # on-manifold domain: <bp,y>_L <= -1/k  => alpha = -k<bp,y>_L >= 1
-        # inner_max = -(1.0 / k + 1e-6)
-        # inner_clamped = torch.minimum(inner, inner_max)
-        # alpha = -k * inner_clamped  # >= 1
-
-        # direction = y - alpha.unsqueeze(-1) * bp
-        # denom = torch.sqrt(torch.clamp(alpha * alpha - 1.0, min=1e-8))
-        # factor = torch.acosh(alpha) / denom
-
-        # out = factor.unsqueeze(-1) * direction
-
         xy     = self.inner_stable(bp, y)
         alpha  = (-k * xy).clamp_min(1.0 + self.eps)
         dist   = torch.acosh(alpha) / sqrt_k
@@ -223,14 +227,6 @@ class Lorentz(nn.Module):
         vf = v.float()
         k = self.k().float()
         sqrt_k = torch.sqrt(k)
-
-        # vv = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
-        # norm_v = torch.sqrt(vv)
-        # arg = sqrt_k * norm_v
-
-        # left = torch.cosh(arg)
-        # right = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
-        # out = left * bp + right * vf
 
         vv     = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
         norm_v = torch.sqrt(vv)
@@ -269,22 +265,27 @@ class Lorentz(nn.Module):
         space = xs[..., 1:].reshape(*xs.shape[:-2], -1)
         return torch.cat([time, space], dim=-1)
 
-    def lorentz_midpoint(self, xs: torch.Tensor, w: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Lorentz barycenter via normalized weighted ambient sum over the set axis (-2)."""
-        if w is None:
+    def lorentz_midpoint(self, xs: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Lorentz barycenter via ambient sum. Uniform if weights is None, else weighted sum."""
+        if weights is None:
             num = xs.sum(dim=-2)
         else:
-            num = w @ xs  # supports (...,Nq,Nk)@(....,Nk,D)->(...,Nq,D) and (...,1,Nk)@(...,Nk,D)->(...,1,D)
-            # if you used a singleton-query dimension (like (...,1,Nk)), squeeze it:
-            if num.size(-2) == 1:
-                num = num.squeeze(-2)
-
+            num = weights @ xs
         t = num[..., :1]
         s = num[..., 1:]
         denom_sq = (t * t) - (s * s).sum(dim=-1, keepdim=True)
-        denom_sq = denom_sq.clamp_min(self.eps) 
+        denom_sq = denom_sq.clamp_min(self.eps)
         denom = torch.sqrt(denom_sq) * torch.sqrt(self.k())
         return num / denom
+
+    def lorentz_centroid(self, xs: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+        """Weighted Lorentz centroid for attention aggregation. w: (..., N), xs: (..., N, D)"""
+        num = torch.einsum('...qk,...kd->...qd', w, xs)
+        t = num[..., :1]
+        s = num[..., 1:]
+        denom_sq = (t * t) - (s * s).sum(dim=-1, keepdim=True)
+        denom_sq = denom_sq.clamp_min(self.eps)
+        return num / (torch.sqrt(denom_sq) * torch.sqrt(self.k()))
 
     def lorentz_variance(self, xs: torch.Tensor, mu: torch.Tensor, set_dim: int = -2) -> torch.Tensor:
         """Lorentz variance: mean squared Lorentz distance to the mean."""
@@ -302,7 +303,7 @@ class Lorentz(nn.Module):
             out = self.expmap(xf, v)
         return out.to(x.dtype)
 
-    def tangent_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.1) -> torch.Tensor:
+    def tangent_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 1.0) -> torch.Tensor:
         """Residual: Exp_0(Log_0(x) + weight * Log_0(y))."""
         with torch.autocast(device_type="cuda", enabled=False):
             xf = x.float()
@@ -313,7 +314,7 @@ class Lorentz(nn.Module):
             out = self.expmap0(combined[..., 1:])
         return out.to(x.dtype)
 
-    def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 0.5, wy: float = 0.5, eps: float = 1e-9) -> torch.Tensor:
+    def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 1.0, wy: float = 1.0, eps: float = 1e-9) -> torch.Tensor:
         """LResNet-style residual via ambient interpolation + renormalization (He et al.)."""
         z = wx * x + wy * y
         t = z[..., :1]
@@ -323,6 +324,13 @@ class Lorentz(nn.Module):
         k = self.k()
         scale = torch.sqrt(torch.clamp((1.0 / k) / (-zz + eps), min=eps))
         return scale * z
+
+    def lorentz_scale(self, x: torch.Tensor, gamma: torch.Tensor, eps: float = 1e-9) -> torch.Tensor:
+        """Slide x along its geodesic from the origin by factor gamma (LResNet optional scaling)."""
+        s = gamma * x[..., 1:]
+        k = self.k()
+        t = torch.sqrt(torch.clamp((s * s).sum(dim=-1, keepdim=True) + (1.0 / k), min=eps))
+        return torch.cat([t, s], dim=-1)
 
     def gyro_add(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Gyro-addition via Exp_x( PT_{0->x}( Log_0(y) ) ) as in (Shi, et al.)."""
@@ -360,7 +368,22 @@ class Lorentz(nn.Module):
         out = self.expmap(base_point=o, v=tv0)
         return out
 
-    def _metrics(self, x: torch.Tensor) -> dict:
+    def gyro_scale(self, x: torch.Tensor, delta: torch.Tensor) -> torch.Tensor:
+        k = self.k()
+        # current hyperbolic distance to origin
+        # d(o, x) = (1/sqrt(k)) * arccosh(sqrt(k) * x0)
+        d = (1.0 / k.sqrt()) * torch.acosh(
+            torch.clamp(k.sqrt() * x[..., 0:1], min=1.0 + 1e-6)
+        )  # [..., 1]
+
+        # t such that d(o, t⊙x) = d + delta
+        delta = F.softplus(delta)  # keep positive
+        t = 1.0 + delta / d.clamp(min=1e-6)  # [..., 1]
+
+        # apply gyro scalar multiplication with per-sample t
+        return self.gyro_mul(t, x)
+
+    def metrics(self, x: torch.Tensor) -> dict:
         """Return useful geometric metrics for a batch of points on the manifold."""
         with torch.no_grad():
             xf = x.float()
@@ -389,39 +412,4 @@ class Lorentz(nn.Module):
         space = x64[..., 1:]
         return -time * time + (space * space).sum(dim=-1, keepdim=True)
 
-    def _is_on_manifold(self, x: torch.Tensor, name: str = "", tol: float = 1e-2):
-        """Debug: report hyperboloid constraint error and sheet check, only if violated."""
-        with torch.no_grad():
-            xf = x.float()
-            k = self.k().float()
-            target = (-1.0 / k)
 
-            norm_sq = self._minkowski_norm_sq(xf).squeeze(-1)
-            abs_err = (norm_sq - target).abs()
-            rel_err = abs_err / target.abs()
-
-            x0 = xf[..., 0]
-            sheet_bad = (x0 <= 0)
-
-            violated = (abs_err.max() >= tol) or sheet_bad.any()
-
-            if violated:
-                print(f"[{name}] max abs err {abs_err.max().item():.3e}, mean abs err {abs_err.mean().item():.3e}")
-                print(f"[{name}] max rel err {rel_err.max().item():.3e}, mean rel err {rel_err.mean().item():.3e}")
-                print(f"[{name}] sheet bad frac {(sheet_bad.float().mean().item()):.3e}, x0 min {x0.min().item():.3e}")
-                print(f"[{name}] on-manifold tol={tol} -> False")
-
-            return not violated
-    
-    @staticmethod
-    def _check(t: torch.Tensor, tag: str):
-        """Raise if non-finite values exist."""
-        if not torch.isfinite(t).all():
-            finite = t[torch.isfinite(t)]
-            fin_min = float(finite.min()) if finite.numel() else float("nan")
-            fin_max = float(finite.max()) if finite.numel() else float("nan")
-            bad = (~torch.isfinite(t)).sum().item()
-            raise RuntimeError(
-                f"NON-FINITE at {tag}: shape={tuple(t.shape)} "
-                f"finite_min={fin_min} finite_max={fin_max} bad_count={bad}"
-            )

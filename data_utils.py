@@ -40,7 +40,7 @@ def _build_transforms(meta, train: bool):
         return transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            # transforms.RandAugment(num_ops=2, magnitude=9),
+            transforms.RandAugment(num_ops=2, magnitude=9),
             transforms.ToTensor(),
             transforms.Normalize(meta["mean"], meta["std"]),
         ])

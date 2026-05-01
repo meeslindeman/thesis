@@ -1,124 +1,94 @@
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from dataclasses import asdict
 
 from vit.model import ViT
 
-config = {
-    "patch_size": 4,  # Input image size: 32x32 -> 8x8 patches
-    "hidden_size": 48,
-    "num_hidden_layers": 4,
-    "num_attention_heads": 4,
-    "mlp_dim": 4 * 48, # 4 * hidden_size
-    "dropout_rate": 0.0,
-    "initializer_range": 0.02,
-    "image_size": 32,
-    "num_classes": 10, # num_classes of CIFAR10
-    "num_channels": 3,
-    "qkv_bias": True,
-    "use_faster_attention": True,
-}
-
-class Trainer:
-    def __init__(self, model, optimizer, loss_fn, device):
-        self.model = model.to(device)
-        self.optimizer = optimizer
-        self.loss_fn = loss_fn
-        self.device = device
-
-    def train(self, trainloader, testloader, epochs):
-        # Keep track of the losses and accuracies
-        train_losses, test_losses, accuracies = [], [], []
-        print("Starting training...")
-        print(f"Using device: {self.device}")
-        # Train the model
-        for i in range(epochs):
-            train_loss = self.train_epoch(trainloader)
-            accuracy, test_loss = self.evaluate(testloader)
-            train_losses.append(train_loss)
-            test_losses.append(test_loss)
-            accuracies.append(accuracy)
-            print(f"Epoch: {i+1}, Train loss: {train_loss:.4f}, Test loss: {test_loss:.4f}, Accuracy: {accuracy:.4f}")
-
-    def train_epoch(self, trainloader):
-        self.model.train()
-        total_loss = 0
-        for batch in trainloader:
-            # Move the batch to the device
-            batch = [t.to(self.device) for t in batch]
-            images, labels = batch
-            # Zero the gradients
-            self.optimizer.zero_grad()
-            # Calculate the loss
-            loss = self.loss_fn(self.model(images)[0], labels)
-            # Backpropagate the loss
-            loss.backward()
-            # Update the model's parameters
-            self.optimizer.step()
-            total_loss += loss.item() * len(images)
-        return total_loss / len(trainloader.dataset)
-
-    @torch.no_grad()
-    def evaluate(self, testloader):
-        self.model.eval()
-        total_loss = 0
-        correct = 0
-        with torch.no_grad():
-            for batch in testloader:
-                # Move the batch to the device
-                batch = [t.to(self.device) for t in batch]
-                images, labels = batch
-                
-                # Get predictions
-                logits, _ = self.model(images)
-
-                # Calculate the loss
-                loss = self.loss_fn(logits, labels)
-                total_loss += loss.item() * len(images)
-
-                # Calculate the accuracy
-                predictions = torch.argmax(logits, dim=1)
-                correct += torch.sum(predictions == labels).item()
-        accuracy = correct / len(testloader.dataset)
-        avg_loss = total_loss / len(testloader.dataset)
-        return accuracy, avg_loss
-
-
-def parse_args():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--lr", type=float, default=1e-2)
-    parser.add_argument("--device", type=str)
-
-    args = parser.parse_args()
-    if args.device is None:
-        args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    return args
+from config import Config
+from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate
 
 
 def main():
-    args = parse_args()
-    # Training parameters
-    batch_size = args.batch_size
-    epochs = args.epochs
-    lr = args.lr
-    device = args.device
+    parser = build_parser()
+    args = parser.parse_args()
+    cfg = cfg_from_args(args)
 
-    # Load the CIFAR10 dataset
-    from cifar10_utils import get_cifar10, get_dataloader
-    dataset = get_cifar10(data_dir='data/', validation_size=5000)
-    dataloaders = get_dataloader(dataset, batch_size)
+    print(cfg)
+
+    set_seed(cfg.seed)
+
+    run_start = time.perf_counter()
+
+    from data_utils import get_dataset, get_dataloader
+
+    dataset, _ = get_dataset(cfg.dataset, data_dir="data/", validation_size=5000)
+    dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
+
     trainloader = dataloaders["train"]
     testloader = dataloaders["test"]
 
-    # Create the model, optimizer, loss function and trainer
-    model = ViT(config)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
-    loss_fn = nn.CrossEntropyLoss()
-    trainer = Trainer(model, optimizer, loss_fn, device=device)
-    trainer.train(trainloader, testloader, epochs)
+    device = torch.device(cfg.device)
+
+    model = ViT(asdict(cfg)).to(device)
+    _dummy = torch.zeros(1, cfg.num_channels, cfg.image_size, cfg.image_size, device=device)
+    model(_dummy).sum().backward()
+    total_params = sum(p.numel() for p in model.parameters())
+    used_params  = sum(p.numel() for p in model.parameters() if p.grad is not None)
+    model.zero_grad()
+    print(f"Parameters: {total_params:,} total, {used_params:,} used")
+
+    optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
+
+    if cfg.scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs, eta_min=1e-6
+        )
+    elif cfg.scheduler == "warmup_cosine":
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1e-6, end_factor=1.0, total_iters=cfg.warmup_epochs
+        )
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs - cfg.warmup_epochs, eta_min=1e-6
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[cfg.warmup_epochs]
+        )
+    else:
+        scheduler = None
+
+    best_acc = 0.0
+    epochs_no_improve = 0
+
+    for epoch in range(cfg.epochs):
+        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device)
+        if scheduler is not None:
+            scheduler.step()
+        acc, test_loss = evaluate(model, testloader, loss_fn, device)
+
+        print(
+            f"Epoch: {epoch + 1}, "
+            f"Train loss: {train_loss:.4f}, "
+            f"Train accuracy: {train_acc:.4f}, "
+            f"Test loss: {test_loss:.4f}, "
+            f"Test accuracy: {acc:.4f}"
+        )
+
+        if cfg.patience > 0:
+            if acc > best_acc:
+                best_acc = acc
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+            if epochs_no_improve >= cfg.patience:
+                print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
+                break
+
+    total_time = time.perf_counter() - run_start
+    print(f"Total training time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+
 
 if __name__ == "__main__":
     main()

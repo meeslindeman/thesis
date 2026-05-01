@@ -2,6 +2,7 @@ import argparse
 import random
 import numpy as np
 import torch
+import torch.nn as nn
 
 from dataclasses import fields
 from config import Config
@@ -18,10 +19,6 @@ def set_seed(seed: int) -> None:
 
 
 def build_parser(defaults: Config | None = None) -> argparse.ArgumentParser:
-    """
-    Builds argparse parser from Config fields.
-    If defaults is provided, those are used as argparse defaults.
-    """
     defaults = defaults or Config()
     p = argparse.ArgumentParser()
 
@@ -44,7 +41,6 @@ def build_parser(defaults: Config | None = None) -> argparse.ArgumentParser:
     return p
 
 
-
 def cfg_from_args(args: argparse.Namespace) -> Config:
     init_kwargs = {
         f.name: getattr(args, f.name)
@@ -59,33 +55,26 @@ def cfg_from_args(args: argparse.Namespace) -> Config:
     return cfg
 
 
-def train_one_epoch(model, trainloader, optimizer, loss_fn, device, *, detect_anomaly: bool = False) -> float:
-
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
-
-    torch.autograd.set_detect_anomaly(detect_anomaly)
+    correct = 0
 
     for images, labels in trainloader:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
 
         optimizer.zero_grad(set_to_none=True)
-
         logits = model(images)
-
-        if logits.isnan().any() or logits.isinf().any():
-            raise ValueError("Logits contain NaN or Inf values.")
-
         loss = loss_fn(logits, labels)
-
         loss.backward()
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item() * images.size(0)
+        correct += (logits.detach().argmax(dim=1) == labels).sum().item()
 
-    return total_loss / len(trainloader.dataset)
+    n = len(trainloader.dataset)
+    return total_loss / n, correct / n
 
 
 @torch.no_grad()

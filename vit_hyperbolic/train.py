@@ -36,32 +36,46 @@ def main():
     model_cfg["manifold"] = Lorentz(cfg.curvature)
     
     model = LorentzViT(model_cfg).to(device)
+    _dummy = torch.zeros(1, cfg.num_channels, cfg.image_size, cfg.image_size, device=device)
+    model(_dummy).sum().backward()
+    total_params = sum(p.numel() for p in model.parameters())
+    used_params  = sum(p.numel() for p in model.parameters() if p.grad is not None)
+    model.zero_grad()
+    print(f"Parameters: {total_params:,} total, {used_params:,} used")
 
     optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
 
-    # warmup_epochs = 5
-    # warmup = torch.optim.lr_scheduler.LinearLR(
-    #     optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_epochs
-    # )
-    # cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #     optimizer, T_max=cfg.epochs - warmup_epochs, eta_min=1e-6
-    # )
-    # scheduler = torch.optim.lr_scheduler.SequentialLR(
-    #     optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs]
-    # )
+    if cfg.scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs, eta_min=1e-6
+        )
+    elif cfg.scheduler == "warmup_cosine":
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1e-6, end_factor=1.0, total_iters=cfg.warmup_epochs
+        )
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cfg.epochs - cfg.warmup_epochs, eta_min=1e-6
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[cfg.warmup_epochs]
+        )
+    else:
+        scheduler = None
+
+    best_acc = 0.0
+    epochs_no_improve = 0
 
     for epoch in range(cfg.epochs):
-        train_loss = train_one_epoch(
+        train_loss, train_acc = train_one_epoch(
             model,
             trainloader,
             optimizer,
             loss_fn,
-            device,
-            detect_anomaly=cfg.detect_anomaly
+            device
         )
-        # scheduler.step()
-        train_acc = evaluate(model, trainloader, loss_fn, device)[0]
+        if scheduler is not None:
+            scheduler.step()
         acc, test_loss = evaluate(model, testloader, loss_fn, device)
 
         print(
@@ -71,6 +85,16 @@ def main():
             f"Test loss: {test_loss:.4f}, "
             f"Test accuracy: {acc:.4f}"
         )
+
+        if cfg.patience > 0:
+            if acc > best_acc:
+                best_acc = acc
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+            if epochs_no_improve >= cfg.patience:
+                print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
+                break
 
     total_time = time.perf_counter() - run_start
     print(f"Total training time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
