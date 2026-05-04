@@ -35,12 +35,9 @@ class BaseConfig:
     # loss
     label_smoothing: float = 0.1
 
-    # optimizer ("adamw" | "riemannian")
-    optimizer: str = "adamw"
-
     # scheduler ("none", "cosine", "warmup_cosine")
     scheduler: str = "none"
-    warmup_epochs: int = 5
+    warmup_epochs: int = 10
 
     def __post_init__(self):
         if self.dataset not in DATASET_CONFIGS:

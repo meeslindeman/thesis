@@ -3,14 +3,18 @@ from config_base import BaseConfig
 
 @dataclass
 class Config(BaseConfig):
-    # override base defaults — hyperbolic manifold ops are sensitive to high LR
+    # override base defaults (Euclidean optimizer params)
     lr: float = 1e-4
-    dropout_rate: float = 0.0
+    weight_decay: float = 1e-2   # AdamW for Euclidean params; common ViT default
+    dropout_rate: float = 0.1
 
-    # override: hypercore has ManifoldParameters that require a Riemannian optimizer
-    optimizer: str = "riemannian"
+    # Riemannian optimizer params (ManifoldParameter only)
+    # Paper grid-searched hyp LR in {1e-4,3e-4,1e-3,5e-3}, WD in {0,1e-4,1e-3}
+    hyp_lr: float = 1e-4
+    hyp_weight_decay: float = 1e-4
+    stabilize: int = 1   # retract to manifold every N steps; reference script uses 1
 
-    # hyperbolic geometry
+    # hyperbolic geometry (curvature=-1 in paper; geoopt uses positive convention)
     curvature: float = 1.0
 
     # derived — set in __post_init__, not exposed as CLI args
