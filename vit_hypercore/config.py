@@ -5,14 +5,14 @@ from config_base import BaseConfig
 class Config(BaseConfig):
     # override base defaults (Euclidean optimizer params)
     lr: float = 1e-4
-    weight_decay: float = 1e-2   # AdamW for Euclidean params; common ViT default
+    weight_decay: float = 1e-2   
     dropout_rate: float = 0.1
 
     # Riemannian optimizer params (ManifoldParameter only)
     # Paper grid-searched hyp LR in {1e-4,3e-4,1e-3,5e-3}, WD in {0,1e-4,1e-3}
     hyp_lr: float = 1e-4
     hyp_weight_decay: float = 1e-4
-    stabilize: int = 1   # retract to manifold every N steps; reference script uses 1
+    stabilize: int = 1   # retract to manifold every N steps; their training script uses 1
 
     # hyperbolic geometry (curvature=-1 in paper; geoopt uses positive convention)
     curvature: float = 1.0
