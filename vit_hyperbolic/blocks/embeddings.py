@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from layers.LLinear import LorentzFullyConnected
-from blocks.dropout import IntrinsicDropout
+from vit_hyperbolic.blocks.dropout import IntrinsicDropout
 
 
 class LorentzPatchEmbeddings(nn.Module):
