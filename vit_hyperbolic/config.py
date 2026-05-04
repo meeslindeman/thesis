@@ -3,7 +3,8 @@ from config_base import BaseConfig
 
 @dataclass
 class Config(BaseConfig):
-    # override base default
+    # override base defaults — hyperbolic manifold ops are sensitive to high LR
+    lr: float = 1e-4
     dropout_rate: float = 0.0
 
     # shared with euclidean but not in base (attention dropout, patch settings)

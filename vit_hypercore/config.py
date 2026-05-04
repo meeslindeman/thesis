@@ -3,7 +3,8 @@ from config_base import BaseConfig
 
 @dataclass
 class Config(BaseConfig):
-    # override base default — hypercore layers run without input dropout
+    # override base defaults — hyperbolic manifold ops are sensitive to high LR
+    lr: float = 1e-4
     dropout_rate: float = 0.0
 
     # override: hypercore has ManifoldParameters that require a Riemannian optimizer
