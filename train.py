@@ -119,8 +119,6 @@ def main():
                         help="Which model to train (euclidean | hyperbolic | hypercore)")
     parser.add_argument("--checkpoint_dir", default=None,
                         help="Directory to save checkpoints (omit to skip saving)")
-    parser.add_argument("--checkpoint_min_delta", type=float, default=0.005,
-                        help="Minimum accuracy improvement to overwrite the best checkpoint")
     args = parser.parse_args()
     cfg = cfg_from_args(args, Config)
 
@@ -151,10 +149,7 @@ def main():
     scheduler = build_scheduler(cfg, optimizer)
 
     best_acc = 0.0
-    saved_acc = 0.0
     epochs_no_improve = 0
-    ckpt_dir = Path(args.checkpoint_dir) if args.checkpoint_dir else None
-    ckpt_stem = f"{args.model}_{cfg.dataset}"
 
     for epoch in range(cfg.epochs):
         train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device)
@@ -170,31 +165,20 @@ def main():
             f"Test accuracy: {acc:.4f}"
         )
 
-        if acc > best_acc:
-            best_acc = acc
-            epochs_no_improve = 0
-            if ckpt_dir is not None and acc >= saved_acc + args.checkpoint_min_delta:
-                saved_acc = acc
-                save_checkpoint(
-                    ckpt_dir / f"{ckpt_stem}_best.pt",
-                    model, optimizer,
-                    epoch=epoch + 1, acc=acc, model_name=args.model,
-                )
-                print(f"  Saved best checkpoint (acc={acc:.4f})")
-        else:
-            epochs_no_improve += 1
+        if cfg.patience > 0:
+            if acc > best_acc:
+                best_acc = acc
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+            if epochs_no_improve >= cfg.patience:
+                print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
+                break
 
-        if cfg.patience > 0 and epochs_no_improve >= cfg.patience:
-            print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
-            break
-
-    if ckpt_dir is not None:
-        save_checkpoint(
-            ckpt_dir / f"{ckpt_stem}_final.pt",
-            model, optimizer,
-            epoch=epoch + 1, acc=acc, model_name=args.model,
-        )
-        print(f"Saved final checkpoint (epoch={epoch + 1}, acc={acc:.4f})")
+    if args.checkpoint_dir is not None:
+        ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}.pt"
+        save_checkpoint(ckpt_path, model, optimizer, epoch=epoch + 1, acc=acc, model_name=args.model)
+        print(f"Saved checkpoint: {ckpt_path}")
 
     total_time = time.perf_counter() - run_start
     print(f"Total training time: {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")

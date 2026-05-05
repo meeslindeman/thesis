@@ -11,7 +11,7 @@ class BaseConfig:
     batch_size: int = 256
     epochs: int = 30
     lr: float = 1e-3
-    weight_decay: float = 0.0
+    weight_decay: float = 0.1
     device: str = "auto"
     seed: int = 0
 
@@ -22,7 +22,7 @@ class BaseConfig:
     num_channels: int = field(init=False)
 
     # early stopping (0 = disabled)
-    patience: int = 5
+    patience: int = 10
 
     # model (common to all three variants)
     patch_size: int = 4

@@ -11,7 +11,7 @@ class Config(BaseConfig):
     # Riemannian optimizer params (ManifoldParameter only)
     # Paper grid-searched hyp LR in {1e-4,3e-4,1e-3,5e-3}, WD in {0,1e-4,1e-3}
     hyp_lr: float = 1e-4
-    hyp_weight_decay: float = 1e-4
+    hyp_weight_decay: float = 1e-3
     stabilize: int = 1   # retract to manifold every N steps; their training script uses 1
 
     # hyperbolic geometry (curvature=-1 in paper; geoopt uses positive convention)
