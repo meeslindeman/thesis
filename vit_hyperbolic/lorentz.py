@@ -188,12 +188,43 @@ class Lorentz(nn.Module):
         y_time = y[..., :1]
         y_space = y[..., 1:]
 
-        # denom = sqrt(k) * ||y_space||
         norm_y_space_sq = torch.sum(y_space * y_space, dim=-1, keepdim=True)
         denom = torch.sqrt(torch.clamp(k * norm_y_space_sq, min=1e-9))
 
         acosh_arg = (sqrt_k * y_time).clamp_min(1.0 + self.eps)
         factor = torch.acosh(acosh_arg) / denom
+
+        v_space = factor * y_space
+        v_time = torch.zeros_like(y_time)
+        return torch.cat([v_time, v_space], dim=-1)
+
+    def logmap0_safe(self, y: torch.Tensor) -> torch.Tensor:
+        """
+        Log map at the origin with a zero-norm safeguard.
+
+        torch.where evaluates gradients for both branches, so if denom → 0 the
+        gradient of ac/denom diverges and produces NaN via ∞×0 in the backward.
+        Fix: substitute safe_denom = 1 for the near-origin branch so the not-
+        selected branch has a bounded gradient, then use a Taylor approximation
+        (factor → 1 as ‖y_space‖ → 0) for the selected branch.
+        """
+        k = self.k()
+        sqrt_k = torch.sqrt(k)
+
+        y_time = y[..., :1]
+        y_space = y[..., 1:]
+
+        norm_y_space_sq = torch.sum(y_space * y_space, dim=-1, keepdim=True)
+
+        acosh_arg = (sqrt_k * y_time).clamp_min(1.0 + self.eps)
+        ac = torch.acosh(acosh_arg)
+
+        small = norm_y_space_sq < 1e-7
+        # safe_denom = 1 when small → d(ac/safe_denom)/dy_space stays finite
+        safe_denom = torch.sqrt(torch.where(small, torch.ones_like(norm_y_space_sq), k * norm_y_space_sq))
+        factor_full   = ac / safe_denom                       # finite gradient everywhere
+        factor_taylor = 1.0 - k * norm_y_space_sq / 24.0    # Taylor: factor(0) = 1
+        factor = torch.where(small, factor_taylor, factor_full)
 
         v_space = factor * y_space
         v_time = torch.zeros_like(y_time)

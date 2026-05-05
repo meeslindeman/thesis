@@ -25,10 +25,10 @@ class LorentzMHA(nn.Module):
             out_dim: int | None = None,
             reset_params: str = "lorentz_kaiming",
             a_default: float = 0.0,
-            use_weight_norm: bool = False,
             attn_mask: torch.Tensor | None = None,
             dropout_rate: float = 0.0,
-            attn_dropout_rate: float = 0.0
+            attn_dropout_rate: float = 0.0,
+            use_weight_norm: bool = False
         ) -> None:
         super().__init__()
 
@@ -77,7 +77,7 @@ class LorentzMHA(nn.Module):
                 reset_params=reset_params, 
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=False
+                use_weight_norm=use_weight_norm
             )
             for _ in range(self.num_heads)
         ])
@@ -89,7 +89,7 @@ class LorentzMHA(nn.Module):
                 reset_params=reset_params, 
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=False
+                use_weight_norm=use_weight_norm
             )
             for _ in range(self.num_heads)
         ])
@@ -101,7 +101,7 @@ class LorentzMHA(nn.Module):
                 reset_params=reset_params, 
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=False
+                use_weight_norm=use_weight_norm
             )
             for _ in range(self.num_heads)
         ])
@@ -120,7 +120,7 @@ class LorentzMHA(nn.Module):
             reset_params=reset_params,
             a_default=a_default,
             activation=nn.Identity(),
-            use_weight_norm=False
+            use_weight_norm=use_weight_norm
         ) 
         
         # Precompute log-radius scale for concat_logradius

@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from vit_hyperbolic.blocks.attention import LorentzMHA
 from vit_hyperbolic.blocks.batchnorm import LorentzBatchNorm1d
+from vit_hyperbolic.blocks.batchnorm_gyro import LorentzGyroBN1d
 from layers.LLinear import LorentzFullyConnected
 
 
@@ -53,7 +54,8 @@ class LorentzTransformerBlock(nn.Module):
             a_default=config["a_default"],
             attn_mask=config.get("attn_mask", None),
             dropout_rate=config["dropout_rate"],
-            attn_dropout_rate=config["attn_dropout_rate"]
+            attn_dropout_rate=config["attn_dropout_rate"],
+            use_weight_norm=config["use_weight_norm"]
         )
         self.mlp = LorentzMLP(config)
 
@@ -67,6 +69,17 @@ class LorentzTransformerBlock(nn.Module):
             manifold=config["manifold"],
             normalize_variance=False,
         )
+
+        # self.batchnorm1 = LorentzGyroBN1d(
+        #     num_features=config["hidden_size"] + 1,
+        #     manifold=config["manifold"],
+        #     normalize_variance=False
+        # )
+        # self.batchnorm2 = LorentzGyroBN1d(
+        #     num_features=config["hidden_size"] + 1,
+        #     manifold=config["manifold"],
+        #     normalize_variance=False
+        # )
 
         # geodesic: weight is t passed through sigmoid, init 0.0 → sigmoid(0)=0.5 (midpoint)
         # lorentz_residual / others: weight is wy used with abs(), init 1.0 (equal-weight midpoint)

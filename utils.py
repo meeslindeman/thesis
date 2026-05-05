@@ -44,7 +44,10 @@ def save_checkpoint(path, model, optimizer=None, **extra):
     path.parent.mkdir(parents=True, exist_ok=True)
     state = {"model": model.state_dict(), **extra}
     if optimizer is not None:
-        state["optimizer"] = optimizer.state_dict()
+        if hasattr(optimizer, "optimizers"):
+            state["optimizer"] = [o.state_dict() for o in optimizer.optimizers]
+        else:
+            state["optimizer"] = optimizer.state_dict()
     torch.save(state, path)
 
 
@@ -52,7 +55,12 @@ def load_checkpoint(path, model, optimizer=None, map_location="cpu"):
     state = torch.load(path, map_location=map_location)
     model.load_state_dict(state["model"])
     if optimizer is not None and "optimizer" in state:
-        optimizer.load_state_dict(state["optimizer"])
+        opt_state = state["optimizer"]
+        if hasattr(optimizer, "optimizers") and isinstance(opt_state, list):
+            for o, s in zip(optimizer.optimizers, opt_state):
+                o.load_state_dict(s)
+        else:
+            optimizer.load_state_dict(opt_state)
     return state
 
 
