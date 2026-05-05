@@ -22,7 +22,7 @@ class BaseConfig:
     num_channels: int = field(init=False)
 
     # early stopping (0 = disabled)
-    patience: int = 0
+    patience: int = 5
 
     # model (common to all three variants)
     patch_size: int = 4
