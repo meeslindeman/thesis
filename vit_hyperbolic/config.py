@@ -12,6 +12,9 @@ class Config(BaseConfig):
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
 
+    # optimizer
+    optimizer: str = "adamw"    # adamw | riemannian
+
     # residual connection scaling
     residual_weight_init: float = 0.0
     residual_delta_init: float = 2.0
