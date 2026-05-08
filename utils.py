@@ -7,10 +7,7 @@ import torch
 from dataclasses import fields
 
 
-# ---------------------------------------------------------------------------
-# Seeding / device
-# ---------------------------------------------------------------------------
-
+# Seed setting and device management
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -35,10 +32,7 @@ def to_device(batch, device):
     return batch
 
 
-# ---------------------------------------------------------------------------
 # Checkpointing
-# ---------------------------------------------------------------------------
-
 def save_checkpoint(path, model, optimizer=None, scheduler=None, **extra):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,11 +70,7 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None, map_location="c
     return state
 
 
-# ---------------------------------------------------------------------------
-# Argument parsing — parameterised by Config class so each model gets its
-# own fields without sharing a single monolithic config.
-# ---------------------------------------------------------------------------
-
+# Configuration and argument parsing
 def build_parser(Config) -> argparse.ArgumentParser:
     defaults = Config()
     p = argparse.ArgumentParser()
@@ -106,10 +96,7 @@ def cfg_from_args(args: argparse.Namespace, Config):
     return cfg
 
 
-# ---------------------------------------------------------------------------
 # Training / evaluation loops
-# ---------------------------------------------------------------------------
-
 def train_one_epoch(model, trainloader, optimizer, loss_fn, device) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
