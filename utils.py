@@ -39,7 +39,7 @@ def to_device(batch, device):
 # Checkpointing
 # ---------------------------------------------------------------------------
 
-def save_checkpoint(path, model, optimizer=None, **extra):
+def save_checkpoint(path, model, optimizer=None, scheduler=None, **extra):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     state = {"model": model.state_dict(), **extra}
@@ -48,11 +48,16 @@ def save_checkpoint(path, model, optimizer=None, **extra):
             state["optimizer"] = [o.state_dict() for o in optimizer.optimizers]
         else:
             state["optimizer"] = optimizer.state_dict()
+    if scheduler is not None:
+        if hasattr(scheduler, "schedulers"):
+            state["scheduler"] = [s.state_dict() for s in scheduler.schedulers]
+        else:
+            state["scheduler"] = scheduler.state_dict()
     torch.save(state, path)
 
 
-def load_checkpoint(path, model, optimizer=None, map_location="cpu"):
-    state = torch.load(path, map_location=map_location)
+def load_checkpoint(path, model, optimizer=None, scheduler=None, map_location="cpu"):
+    state = torch.load(path, map_location=map_location, weights_only=True)
     model.load_state_dict(state["model"])
     if optimizer is not None and "optimizer" in state:
         opt_state = state["optimizer"]
@@ -61,6 +66,13 @@ def load_checkpoint(path, model, optimizer=None, map_location="cpu"):
                 o.load_state_dict(s)
         else:
             optimizer.load_state_dict(opt_state)
+    if scheduler is not None and "scheduler" in state:
+        sched_state = state["scheduler"]
+        if hasattr(scheduler, "schedulers") and isinstance(sched_state, list):
+            for s, sd in zip(scheduler.schedulers, sched_state):
+                s.load_state_dict(sd)
+        else:
+            scheduler.load_state_dict(sched_state)
     return state
 
 
