@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from data_utils import get_dataset, get_dataloader
-from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate, save_checkpoint
+from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint
 
 MODELS = ["euclidean", "hyperbolic", "hypercore"]
 
@@ -119,6 +119,8 @@ def main():
                         help="Which model to train (euclidean | hyperbolic | hypercore)")
     parser.add_argument("--checkpoint_dir", default=None,
                         help="Directory to save checkpoints (omit to skip saving)")
+    parser.add_argument("--resume", default=None,
+                        help="Path to checkpoint to resume training from")
     args = parser.parse_args()
     cfg = cfg_from_args(args, Config)
 
@@ -148,10 +150,17 @@ def main():
     loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
     scheduler = build_scheduler(cfg, optimizer)
 
+    start_epoch = 0
     best_acc = 0.0
     epochs_no_improve = 0
 
-    for epoch in range(cfg.epochs):
+    if args.resume is not None:
+        state = load_checkpoint(args.resume, model, optimizer, scheduler, map_location=device)
+        start_epoch = state.get("epoch", 0)
+        best_acc = state.get("acc", 0.0)
+        print(f"Resumed from epoch {start_epoch} (acc={best_acc:.4f})")
+
+    for epoch in range(start_epoch, cfg.epochs):
         train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device)
         if scheduler is not None:
             scheduler.step()
@@ -177,7 +186,7 @@ def main():
 
     if args.checkpoint_dir is not None:
         ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}.pt"
-        save_checkpoint(ckpt_path, model, optimizer, epoch=epoch + 1, acc=acc, model_name=args.model)
+        save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, acc=acc, model_name=args.model)
         print(f"Saved checkpoint: {ckpt_path}")
 
     total_time = time.perf_counter() - run_start
