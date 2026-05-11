@@ -33,8 +33,12 @@ class LorentzViT(nn.Module):
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Return pooled Lorentz representation before classification."""
         x = self.embedding(x)
         x = self.encoder(x)
-        pooled = self.pool_tokens(x)
+        return self.pool_tokens(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        pooled = self.encode(x)
         return self.classifier(pooled)

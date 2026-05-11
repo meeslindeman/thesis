@@ -7,6 +7,38 @@ import torch
 from dataclasses import fields
 
 
+def _make_scheduler(cfg, opt):
+    if cfg.scheduler == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs, eta_min=1e-6)
+    elif cfg.scheduler == "warmup_cosine":
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            opt, start_factor=1e-6, end_factor=1.0, total_iters=cfg.warmup_epochs
+        )
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=cfg.epochs - cfg.warmup_epochs, eta_min=1e-6
+        )
+        return torch.optim.lr_scheduler.SequentialLR(
+            opt, schedulers=[warmup, cosine], milestones=[cfg.warmup_epochs]
+        )
+    return None
+
+
+def build_scheduler(cfg, optimizer):
+    if hasattr(optimizer, "optimizers"):
+        schedulers = [s for o in optimizer.optimizers if (s := _make_scheduler(cfg, o)) is not None]
+        if not schedulers:
+            return None
+
+        class DualScheduler:
+            def step(self):
+                for s in schedulers:
+                    s.step()
+
+        return DualScheduler()
+
+    return _make_scheduler(cfg, optimizer)
+
+
 # Seed setting and device management
 def set_seed(seed: int) -> None:
     random.seed(seed)

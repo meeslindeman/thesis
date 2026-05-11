@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from data_utils import get_dataset, get_dataloader
-from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint
+from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint, build_scheduler
 
 MODELS = ["euclidean", "hyperbolic", "hypercore"]
 
@@ -71,38 +71,6 @@ def build_optimizer(model_name: str, model, cfg):
         from vit_hypercore.optimizer import build_optimizer as _build
         return _build(model, cfg)
 
-
-def _make_scheduler(cfg, opt):
-    if cfg.scheduler == "cosine":
-        return torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs, eta_min=1e-6)
-    elif cfg.scheduler == "warmup_cosine":
-        warmup = torch.optim.lr_scheduler.LinearLR(
-            opt, start_factor=1e-6, end_factor=1.0, total_iters=cfg.warmup_epochs
-        )
-        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt, T_max=cfg.epochs - cfg.warmup_epochs, eta_min=1e-6
-        )
-        return torch.optim.lr_scheduler.SequentialLR(
-            opt, schedulers=[warmup, cosine], milestones=[cfg.warmup_epochs]
-        )
-    return None
-
-
-def build_scheduler(cfg, optimizer):
-    # DualOptimizer exposes .optimizers; apply the same schedule to each
-    if hasattr(optimizer, "optimizers"):
-        schedulers = [s for o in optimizer.optimizers if (s := _make_scheduler(cfg, o)) is not None]
-        if not schedulers:
-            return None
-
-        class DualScheduler:
-            def step(self):
-                for s in schedulers:
-                    s.step()
-
-        return DualScheduler()
-
-    return _make_scheduler(cfg, optimizer)
 
 
 def main():

@@ -140,10 +140,14 @@ class ViT(nn.Module):
             return x[:, 0]
         return x.mean(dim=1)
 
-    def forward(self, x):
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Return pooled Euclidean representation before classification."""
         x = self.embedding(x)
         x = self.encoder(x)
-        return self.classifier(self.pool(x))
+        return self.pool(x)
+
+    def forward(self, x):
+        return self.classifier(self.encode(x))
 
     def _init_weights(self):
         std = self.config["initializer_range"]

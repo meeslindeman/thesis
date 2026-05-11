@@ -1,0 +1,109 @@
+#!/bin/bash
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus=1
+#SBATCH --job-name=idmm
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=9
+#SBATCH --time=23:59:00
+#SBATCH --output=out/idmm/slurm_%A.out
+
+set -eo pipefail
+
+module purge
+module load 2024
+module load Anaconda3/2024.06-1
+
+source activate hvit
+# idmm before main so that train_idmm.py picks up the IDMM data_utils
+export PYTHONPATH="$(pwd):$(pwd)/experiments/idmm:$(pwd)/experiments/main"
+
+mkdir -p out/idmm
+
+# -------------------------
+# Dataset and model
+# -------------------------
+DATASET=flowers102     # flowers102 | pets | dtd | indoor67 | cub200 | aircrafts | cars
+MODEL=hyperbolic       # euclidean | hyperbolic
+
+# -------------------------
+# Architecture (tiny ViT as in IDMM paper)
+# -------------------------
+NUM_HIDDEN_LAYERS=12
+HIDDEN_SIZE=192
+NUM_ATTENTION_HEADS=3
+MLP_DIM=768
+PATCH_SIZE=16         # 224/16 = 14x14 = 196 tokens (standard ViT-T/16)
+
+CURVATURE=1.0
+VALIDATION_SIZE=30
+DATA_DIR=data/
+
+CKPT_DIR="checkpoints/idmm/${DATASET}/${MODEL}"
+
+# curvature is only a valid flag for hyperbolic
+if [[ "$MODEL" == "hyperbolic" ]]; then
+  CURVATURE_FLAG="--curvature ${CURVATURE}"
+else
+  CURVATURE_FLAG=""
+fi
+
+# -------------------------
+# Stage 1: instance-discrimination pretraining
+# -------------------------
+PRETRAIN_EPOCHS=800
+PRETRAIN_LR=5e-4
+PRETRAIN_BATCH=128
+
+echo "=== Stage 1: pretrain ==="
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${PRETRAIN_EPOCHS} lr=${PRETRAIN_LR} batch=${PRETRAIN_BATCH}"
+
+srun python -u experiments/idmm/train_idmm.py \
+  --stage pretrain \
+  --model "${MODEL}" \
+  --dataset "${DATASET}" \
+  --data_dir "${DATA_DIR}" \
+  --validation_size "${VALIDATION_SIZE}" \
+  --epochs "${PRETRAIN_EPOCHS}" \
+  --lr "${PRETRAIN_LR}" \
+  --batch_size "${PRETRAIN_BATCH}" \
+  --num_hidden_layers "${NUM_HIDDEN_LAYERS}" \
+  --hidden_size "${HIDDEN_SIZE}" \
+  --num_attention_heads "${NUM_ATTENTION_HEADS}" \
+  --mlp_dim "${MLP_DIM}" \
+  --patch_size "${PATCH_SIZE}" \
+  ${CURVATURE_FLAG} \
+  --use_cutmix \
+  --n_global_crops 2 \
+  --n_local_crops 4 \
+  --scheduler warmup_cosine \
+  --checkpoint_dir "${CKPT_DIR}"
+
+# -------------------------
+# Stage 2: supervised fine-tuning
+# -------------------------
+FINETUNE_EPOCHS=50
+FINETUNE_LR=1e-3
+FINETUNE_BATCH=64
+PRETRAIN_CKPT="${CKPT_DIR}/idmm_pretrained_encoder.pt"
+
+echo "=== Stage 2: finetune ==="
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${FINETUNE_EPOCHS} lr=${FINETUNE_LR} batch=${FINETUNE_BATCH}"
+
+srun python -u experiments/idmm/train_idmm.py \
+  --stage finetune \
+  --model "${MODEL}" \
+  --dataset "${DATASET}" \
+  --data_dir "${DATA_DIR}" \
+  --validation_size "${VALIDATION_SIZE}" \
+  --epochs "${FINETUNE_EPOCHS}" \
+  --lr "${FINETUNE_LR}" \
+  --batch_size "${FINETUNE_BATCH}" \
+  --num_hidden_layers "${NUM_HIDDEN_LAYERS}" \
+  --hidden_size "${HIDDEN_SIZE}" \
+  --num_attention_heads "${NUM_ATTENTION_HEADS}" \
+  --mlp_dim "${MLP_DIM}" \
+  --patch_size "${PATCH_SIZE}" \
+  ${CURVATURE_FLAG} \
+  --scheduler warmup_cosine \
+  --pretrain_checkpoint "${PRETRAIN_CKPT}" \
+  --checkpoint_dir "${CKPT_DIR}"

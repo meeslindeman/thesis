@@ -1,9 +1,15 @@
 from dataclasses import dataclass, field
 
 DATASET_CONFIGS = {
-    "cifar10":       {"image_size": 32, "num_classes": 10,  "num_channels": 3},
-    "cifar100":      {"image_size": 32, "num_classes": 100, "num_channels": 3},
-    "tiny_imagenet": {"image_size": 64, "num_classes": 200, "num_channels": 3},
+    # CIFAR / TinyImageNet (main experiments)
+    "cifar10":       {"image_size": 32,  "num_classes": 10,  "num_channels": 3},
+    "cifar100":      {"image_size": 32,  "num_classes": 100, "num_channels": 3},
+    "tiny_imagenet": {"image_size": 64,  "num_classes": 200, "num_channels": 3},
+    # IDMM small datasets (224×224, torchvision download)
+    "flowers102":    {"image_size": 224, "num_classes": 102, "num_channels": 3},
+    "pets":          {"image_size": 224, "num_classes": 37,  "num_channels": 3},
+    "dtd":           {"image_size": 224, "num_classes": 47,  "num_channels": 3},
+    "aircrafts":     {"image_size": 224, "num_classes": 100, "num_channels": 3},
 }
 
 @dataclass
