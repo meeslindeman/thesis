@@ -21,7 +21,7 @@ class Config(BaseConfig):
     residual_delta_init: float = 2.0
 
     # optional LorentzBatchNorm in transformer blocks
-    layernorm: bool = False
+    layernorm: bool = True
 
     # hyperbolic geometry
     curvature: float = 1.0
