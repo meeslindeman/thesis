@@ -22,40 +22,49 @@ mkdir -p out/idmm
 # -------------------------
 # Dataset and model
 # -------------------------
-DATASET=flowers102     # flowers102 | pets | dtd | indoor67 | cub200 | aircrafts | cars
-MODEL=hyperbolic       # euclidean | hyperbolic
+DATASET=flowers102     # flowers102 | pets | dtd | aircrafts
+MODEL=euclidean       # euclidean | hyperbolic
 
 # -------------------------
-# Architecture (tiny ViT as in IDMM paper)
+# Architecture — DeiT-Tiny/16 as in the paper
 # -------------------------
 NUM_HIDDEN_LAYERS=12
 HIDDEN_SIZE=192
 NUM_ATTENTION_HEADS=3
 MLP_DIM=768
-PATCH_SIZE=16         # 224/16 = 14x14 = 196 tokens (standard ViT-T/16)
+PATCH_SIZE=16          # 112/16=7×7=49 tokens (pretrain), 224/16=14×14=196 tokens (finetune)
 
-CURVATURE=1.0
-VALIDATION_SIZE=30
 DATA_DIR=data/
-
+VALIDATION_SIZE=30
 CKPT_DIR="checkpoints/idmm/${DATASET}/${MODEL}"
 
 # curvature is only a valid flag for hyperbolic
 if [[ "$MODEL" == "hyperbolic" ]]; then
-  CURVATURE_FLAG="--curvature ${CURVATURE}"
+  CURVATURE_FLAG="--curvature 1.0"
 else
   CURVATURE_FLAG=""
 fi
 
 # -------------------------
+# Hyperparameters — match the paper exactly
+# AdamW, lr=5e-4, wd=1e-3, cosine decay (no warmup), batch=256
+# -------------------------
+LR=5e-4
+WEIGHT_DECAY=1e-3
+BATCH_SIZE=256
+SCHEDULER=warmup_cosine
+WARMUP_EPOCHS=2        # hardcoded in paper's train script
+LABEL_SMOOTHING=0.1    # paper sets epsilon=0.1
+
+# -------------------------
 # Stage 1: instance-discrimination pretraining
+# Paper: 800 epochs at 112×112
 # -------------------------
 PRETRAIN_EPOCHS=800
-PRETRAIN_LR=5e-4
-PRETRAIN_BATCH=128
+PRETRAIN_IMAGE_SIZE=112
 
 echo "=== Stage 1: pretrain ==="
-echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${PRETRAIN_EPOCHS} lr=${PRETRAIN_LR} batch=${PRETRAIN_BATCH}"
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${PRETRAIN_EPOCHS} res=${PRETRAIN_IMAGE_SIZE} lr=${LR} batch=${BATCH_SIZE}"
 
 srun python -u experiments/idmm/train_idmm.py \
   --stage pretrain \
@@ -64,30 +73,33 @@ srun python -u experiments/idmm/train_idmm.py \
   --data_dir "${DATA_DIR}" \
   --validation_size "${VALIDATION_SIZE}" \
   --epochs "${PRETRAIN_EPOCHS}" \
-  --lr "${PRETRAIN_LR}" \
-  --batch_size "${PRETRAIN_BATCH}" \
+  --lr "${LR}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --batch_size "${BATCH_SIZE}" \
+  --scheduler "${SCHEDULER}" \
+  --warmup_epochs "${WARMUP_EPOCHS}" \
+  --label_smoothing "${LABEL_SMOOTHING}" \
   --num_hidden_layers "${NUM_HIDDEN_LAYERS}" \
   --hidden_size "${HIDDEN_SIZE}" \
   --num_attention_heads "${NUM_ATTENTION_HEADS}" \
   --mlp_dim "${MLP_DIM}" \
   --patch_size "${PATCH_SIZE}" \
-  ${CURVATURE_FLAG} \
+  --pretrain_image_size "${PRETRAIN_IMAGE_SIZE}" \
   --use_cutmix \
   --n_global_crops 2 \
   --n_local_crops 4 \
-  --scheduler warmup_cosine \
+  ${CURVATURE_FLAG} \
   --checkpoint_dir "${CKPT_DIR}"
 
 # -------------------------
 # Stage 2: supervised fine-tuning
+# Paper: 200 epochs at 224×224 (pos embeddings interpolated from 112 checkpoint)
 # -------------------------
-FINETUNE_EPOCHS=50
-FINETUNE_LR=1e-3
-FINETUNE_BATCH=64
+FINETUNE_EPOCHS=200
 PRETRAIN_CKPT="${CKPT_DIR}/idmm_pretrained_encoder.pt"
 
 echo "=== Stage 2: finetune ==="
-echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${FINETUNE_EPOCHS} lr=${FINETUNE_LR} batch=${FINETUNE_BATCH}"
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${FINETUNE_EPOCHS} res=224 lr=${LR} batch=${BATCH_SIZE}"
 
 srun python -u experiments/idmm/train_idmm.py \
   --stage finetune \
@@ -96,14 +108,18 @@ srun python -u experiments/idmm/train_idmm.py \
   --data_dir "${DATA_DIR}" \
   --validation_size "${VALIDATION_SIZE}" \
   --epochs "${FINETUNE_EPOCHS}" \
-  --lr "${FINETUNE_LR}" \
-  --batch_size "${FINETUNE_BATCH}" \
+  --lr "${LR}" \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --batch_size "${BATCH_SIZE}" \
+  --scheduler "${SCHEDULER}" \
+  --warmup_epochs "${WARMUP_EPOCHS}" \
+  --label_smoothing "${LABEL_SMOOTHING}" \
   --num_hidden_layers "${NUM_HIDDEN_LAYERS}" \
   --hidden_size "${HIDDEN_SIZE}" \
   --num_attention_heads "${NUM_ATTENTION_HEADS}" \
   --mlp_dim "${MLP_DIM}" \
   --patch_size "${PATCH_SIZE}" \
+  --pretrain_image_size "${PRETRAIN_IMAGE_SIZE}" \
   ${CURVATURE_FLAG} \
-  --scheduler warmup_cosine \
   --pretrain_checkpoint "${PRETRAIN_CKPT}" \
   --checkpoint_dir "${CKPT_DIR}"

@@ -85,9 +85,9 @@ DATASET_REGISTRY = {
 def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False, return_numpy=False):
     collate_fn = numpy_collate_fn if return_numpy else None
     return {
-        "train": DataLoader(dataset["train"], batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, collate_fn=collate_fn),
-        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn),
-        "test": DataLoader(dataset["test"], batch_size=512, shuffle=False, drop_last=False, collate_fn=collate_fn)
+        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle,  drop_last=drop_last, collate_fn=collate_fn, num_workers=8, pin_memory=True),
+        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False,    drop_last=False,     collate_fn=collate_fn, num_workers=4, pin_memory=True),
+        "test":       DataLoader(dataset["test"],       batch_size=512,        shuffle=False,    drop_last=False,     collate_fn=collate_fn, num_workers=4, pin_memory=True),
     }
 
 

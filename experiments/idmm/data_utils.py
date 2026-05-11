@@ -1,11 +1,17 @@
 """
 Data utilities for IDMM experiments (small datasets).
-All datasets download automatically via torchvision: flowers102, pets, dtd, aircrafts.
+All datasets download automatically via torchvision.
+
+Training splits follow the paper (Table 1):
+  flowers102 — train+val (2040),  test (6149)
+  pets       — trainval  (3680),  test (3669)
+  dtd        — train+val (3760),  test (1880)
+  aircrafts  — trainval  (6667),  test (3333)
 """
 
 import torch
 from pathlib import Path
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader, Dataset
 from torchvision import transforms
 
 
@@ -25,8 +31,8 @@ def _build_transforms(size: int, train: bool):
     if train:
         return transforms.Compose([
             transforms.RandomResizedCrop(size),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.4),
             transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -41,32 +47,48 @@ def _build_transforms(size: int, train: bool):
 def _load_splits(name: str, root: Path, train_tf, test_tf):
     """
     Returns (train_full, val_src, test).
-    val_src is the same data as train_full but with test_tf (no augmentation).
-    Torchvision datasets download to root/; ImageFolder datasets read from root/<name>/.
+    val_src mirrors train_full with test_tf (no augmentation), used for validation splitting.
+    Training sets match the paper's split sizes by combining train+val where applicable.
     """
     if name == "flowers102":
         from torchvision.datasets import Flowers102
-        train_full = Flowers102(root, split="train", transform=train_tf, download=True)
-        val_src    = Flowers102(root, split="train", transform=test_tf,  download=False)
-        test       = Flowers102(root, split="test",  transform=test_tf,  download=False)
+        # train (1020) + val (1020) = 2040 as in the paper
+        train_full = ConcatDataset([
+            Flowers102(root, split="train", transform=train_tf, download=True),
+            Flowers102(root, split="val",   transform=train_tf, download=False),
+        ])
+        val_src = ConcatDataset([
+            Flowers102(root, split="train", transform=test_tf, download=False),
+            Flowers102(root, split="val",   transform=test_tf, download=False),
+        ])
+        test = Flowers102(root, split="test", transform=test_tf, download=False)
 
     elif name == "pets":
         from torchvision.datasets import OxfordIIITPet
+        # trainval = 3680 as in the paper
         train_full = OxfordIIITPet(root, split="trainval", transform=train_tf, download=True)
         val_src    = OxfordIIITPet(root, split="trainval", transform=test_tf,  download=False)
         test       = OxfordIIITPet(root, split="test",     transform=test_tf,  download=False)
 
     elif name == "dtd":
         from torchvision.datasets import DTD
-        train_full = DTD(root, split="train", transform=train_tf, download=True)
-        val_src    = DTD(root, split="train", transform=test_tf,  download=False)
-        test       = DTD(root, split="test",  transform=test_tf,  download=False)
+        # train (1880) + val (1880) = 3760 as in the paper
+        train_full = ConcatDataset([
+            DTD(root, split="train", transform=train_tf, download=True),
+            DTD(root, split="val",   transform=train_tf, download=False),
+        ])
+        val_src = ConcatDataset([
+            DTD(root, split="train", transform=test_tf, download=False),
+            DTD(root, split="val",   transform=test_tf, download=False),
+        ])
+        test = DTD(root, split="test", transform=test_tf, download=False)
 
     elif name == "aircrafts":
         from torchvision.datasets import FGVCAircraft
-        train_full = FGVCAircraft(root, split="train", transform=train_tf, download=True)
-        val_src    = FGVCAircraft(root, split="train", transform=test_tf,  download=False)
-        test       = FGVCAircraft(root, split="test",  transform=test_tf,  download=False)
+        # trainval = 6667 as in the paper
+        train_full = FGVCAircraft(root, split="trainval", transform=train_tf, download=True)
+        val_src    = FGVCAircraft(root, split="trainval", transform=test_tf,  download=False)
+        test       = FGVCAircraft(root, split="test",     transform=test_tf,  download=False)
 
     else:
         raise ValueError(f"Unknown dataset '{name}'. Available: {list(DATASET_REGISTRY)}")
@@ -74,11 +96,9 @@ def _load_splits(name: str, root: Path, train_tf, test_tf):
     return train_full, val_src, test
 
 
-def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0,
-                train_transform=None):
+def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0, train_transform=None):
     """
     Returns ({"train": dataset, "validation": dataset, "test": dataset}, num_classes).
-    Downloads automatically for flowers102, pets, dtd, aircrafts.
     Pass train_transform to override the default (e.g. MultiCropTransform for pretraining).
     """
     name = name.lower()
@@ -108,7 +128,7 @@ def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0,
 
 def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False):
     return {
-        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle, drop_last=drop_last),
-        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False),
-        "test":       DataLoader(dataset["test"],       batch_size=256,        shuffle=False),
+        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, num_workers=8, pin_memory=True),
+        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False,   num_workers=4, pin_memory=True),
+        "test":       DataLoader(dataset["test"],       batch_size=256,        shuffle=False,   num_workers=4, pin_memory=True),
     }

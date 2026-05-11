@@ -13,12 +13,12 @@ The method trains on very small datasets (hundreds to low thousands of images) u
 
 All download automatically on first run via torchvision.
 
-| Dataset | Classes | Train size | Test size |
-|---|---|---|---|
-| `flowers102` | 102 | 1,020 | 6,149 |
-| `pets` | 37 | 3,680 | 3,669 |
-| `dtd` | 47 | 1,880 | 1,880 |
-| `aircrafts` | 100 | 3,334 | 3,333 |
+| Dataset | Classes | Train size | Test size | Split used |
+|---|---|---|---|---|
+| `flowers102` | 102 | 2,040 | 6,149 | train+val |
+| `pets` | 37 | 3,680 | 3,669 | trainval |
+| `dtd` | 47 | 3,760 | 1,880 | train+val |
+| `aircrafts` | 100 | 6,667 | 3,333 | trainval |
 
 ---
 
@@ -55,19 +55,24 @@ sbatch experiments/idmm/idmm.job
 
 Both stages run in the same allocation. Logs go to `out/idmm/slurm_<jobid>.out`. Checkpoints are saved to `checkpoints/idmm/<dataset>/<model>/`.
 
-### Default hyperparameters
+### Hyperparameters (matching the paper exactly)
 
 | | Pretrain | Finetune |
 |---|---|---|
-| Epochs | 800 | 50 |
-| Batch size | 128 | 64 |
-| LR | 5e-4 | 1e-3 |
-| Scheduler | warmup cosine | warmup cosine |
+| Epochs | 800 | 200 |
+| Resolution | 112×112 | 224×224 |
+| Batch size | 256 | 256 |
+| LR | 5e-4 | 5e-4 |
+| Weight decay | 1e-3 | 1e-3 |
+| Scheduler | cosine | cosine |
+| Label smoothing | 0.1 | 0.1 |
+| CutMix α | 0.2 | — |
 | Global crops | 2 | — |
 | Local crops | 4 | — |
-| CutMix | yes | no |
 
-Architecture: ViT-Tiny/16 (12 layers, hidden size 192, 3 heads) — same as used in the IDMM paper.
+Architecture: ViT-Tiny/16 (12 layers, hidden size 192, 3 heads) — matches DeiT-Tiny used in the paper.
+
+**Resolution change**: pretraining at 112×112 gives 7×7=49 tokens instead of 196, which speeds up training and acts as a regularizer. When loading the pretrain checkpoint for fine-tuning, positional embeddings are bicubic-interpolated from 49→196 tokens automatically.
 
 ---
 

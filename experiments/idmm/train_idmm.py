@@ -1,17 +1,24 @@
 """
 IDMM two-stage training: hyperbolic or euclidean ViT.
 
-Stage 1 (pretrain): Instance discrimination with multi-crop and CutMix.
-Stage 2 (finetune): Supervised cross-entropy with the pretrained encoder.
+Stage 1 (pretrain): Instance discrimination with multi-crop and CutMix at low resolution.
+Stage 2 (finetune): Supervised cross-entropy at full resolution, with positional embeddings
+                    interpolated from the pretrain resolution.
+
+Paper: "Training Vision Transformers with Only 2040 Images" (Cao et al., 2022)
 """
 
 import argparse
+import copy
+import random
 import time
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from dataclasses import asdict
 from pathlib import Path
+from PIL import ImageFilter
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -27,31 +34,53 @@ _IMAGENET_STD  = [0.229, 0.224, 0.225]
 # Multi-crop
 # ---------------------------------------------------------------------------
 
+class _GaussianBlur:
+    """Apply Gaussian blur with probability p (SimCLR/SwAV convention)."""
+    def __init__(self, p=0.5, radius_min=0.1, radius_max=2.0):
+        self.p, self.radius_min, self.radius_max = p, radius_min, radius_max
+
+    def __call__(self, img):
+        if random.random() > self.p:
+            return img
+        return img.filter(ImageFilter.GaussianBlur(
+            radius=random.uniform(self.radius_min, self.radius_max)
+        ))
+
+
+def _color_distortion(s=1.0):
+    jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
+    return transforms.Compose([
+        transforms.RandomApply([jitter], p=0.8),
+        transforms.RandomGrayscale(p=0.2),
+    ])
+
+
 class MultiCropTransform:
     """
     Returns n_global + n_local augmented views of a single PIL image.
-    Global crops use a large scale range (most of the image).
-    Local crops use a small scale range (zoomed-in patches), resized to `size`
-    so the fixed-size ViT positional embeddings remain valid.
+    All crops are resized to `size` so the ViT's positional embeddings remain valid.
+    Augmentations match the paper: color distortion (s=1), grayscale, Gaussian blur.
     """
     def __init__(self, size: int, n_global: int = 2, n_local: int = 4):
         normalize = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
         ])
-        global_tf = transforms.Compose([
-            transforms.RandomResizedCrop(size, scale=(0.4, 1.0)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
-            normalize,
-        ])
-        local_tf = transforms.Compose([
-            transforms.RandomResizedCrop(size, scale=(0.05, 0.4)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
-            normalize,
-        ])
-        self.crop_transforms = [global_tf] * n_global + [local_tf] * n_local
+        color_tf = _color_distortion(s=1.0)
+
+        def _make_tf(scale):
+            return transforms.Compose([
+                transforms.RandomResizedCrop(size, scale=scale),
+                transforms.RandomHorizontalFlip(p=0.5),
+                color_tf,
+                _GaussianBlur(p=0.5),
+                normalize,
+            ])
+
+        self.crop_transforms = (
+            [_make_tf((0.4, 1.0))] * n_global +
+            [_make_tf((0.05, 0.4))] * n_local
+        )
 
     def __call__(self, img):
         return [t(img) for t in self.crop_transforms]
@@ -59,9 +88,8 @@ class MultiCropTransform:
 
 def multicrop_collate(batch):
     """
-    Collate function for multi-crop batches.
-    Each item is (list_of_crops, label, idx).
-    Returns (list_of_crop_tensors, labels, indices) where each crop tensor is [B, C, H, W].
+    Collate for multi-crop: each item is (list_of_crops, label, idx).
+    Returns (list_of_crop_tensors [B,C,H,W], labels, indices).
     """
     crops_per_image, labels, indices = zip(*batch)
     n_crops = len(crops_per_image[0])
@@ -95,9 +123,9 @@ class IndexedDataset(Dataset):
 
 class IDMMPretrainModel(nn.Module):
     """
-    Encoder + linear head for instance discrimination.
-    Euclidean: pooled [B, D] → head.
-    Hyperbolic: pooled [B, D+1] → logmap0 → drop time component → head.
+    Encoder + linear head for instance discrimination (N_train classes).
+    Hyperbolic: pooled → logmap0 → drop time component → head.
+    Euclidean:  pooled directly → head.
     """
     def __init__(self, vit_model, hidden_size: int, n_instances: int):
         super().__init__()
@@ -119,10 +147,11 @@ class IDMMPretrainModel(nn.Module):
 # CutMix
 # ---------------------------------------------------------------------------
 
-def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.5):
-    """Apply CutMix to a batch. Returns (mixed_images, labels_a, labels_b, lam)."""
+def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.2):
+    """CutMix. lam=max(lam,1-lam) so original image always dominates (lam>=0.5)."""
     B, _, H, W = images.shape
     lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    lam = max(lam, 1 - lam)
 
     idx = torch.randperm(B, device=images.device)
     cut_h = int(H * (1 - lam) ** 0.5)
@@ -135,7 +164,6 @@ def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.5)
     mixed = images.clone()
     mixed[:, :, y1:y2, x1:x2] = images[idx, :, y1:y2, x1:x2]
     lam = 1.0 - (x2 - x1) * (y2 - y1) / (H * W)
-
     return mixed, labels, labels[idx], lam
 
 
@@ -154,7 +182,6 @@ def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label
     total_loss = 0.0
 
     for crops, _, instance_idx in loader:
-        # crops: list of [B, C, H, W] tensors (n_global + n_local views)
         instance_idx = instance_idx.to(device, non_blocking=True).long()
         n_crops = len(crops)
 
@@ -199,7 +226,7 @@ def finetune_one_epoch(model, loader, optimizer, loss_fn, device):
 
 
 # ---------------------------------------------------------------------------
-# Model builder
+# Model builder + positional embedding interpolation
 # ---------------------------------------------------------------------------
 
 def build_vit(model_name: str, cfg, device):
@@ -214,6 +241,51 @@ def build_vit(model_name: str, cfg, device):
         return LorentzViT(model_cfg).to(device)
     else:
         raise ValueError(f"Unknown model '{model_name}'. IDMM supports: {IDMM_MODELS}")
+
+
+def load_pretrained_encoder(model, checkpoint_path: str, cfg, device):
+    """
+    Load pretrained encoder weights, interpolating positional embeddings if the
+    pretrain resolution differs from the current image_size (e.g. 112 → 224).
+
+    Positional embedding keys:
+      LorentzViT: embedding.pos_space         [1, N, hidden_size]
+      ViT:        embedding.position_embeddings [1, N, hidden_size]
+    """
+    state = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    encoder_state = {k: v for k, v in state["model"].items() if not k.startswith("classifier")}
+
+    # Determine which key holds the position embeddings
+    pos_key = None
+    for candidate in ("embedding.pos_space", "embedding.position_embeddings"):
+        if candidate in encoder_state:
+            pos_key = candidate
+            break
+
+    # Extract and interpolate if needed
+    if pos_key is not None:
+        pos_weights = encoder_state.pop(pos_key)
+        old_n = pos_weights.shape[1]
+        new_n = (cfg.image_size // cfg.patch_size) ** 2
+        if old_n != new_n:
+            old_side = int(old_n ** 0.5)
+            new_side = cfg.image_size // cfg.patch_size
+            D = pos_weights.shape[2]
+            pos = pos_weights.reshape(1, old_side, old_side, D).permute(0, 3, 1, 2).float()
+            pos = F.interpolate(pos, size=(new_side, new_side), mode='bicubic', align_corners=False)
+            pos_weights = pos.permute(0, 2, 3, 1).reshape(1, new_side * new_side, D)
+            print(f"Interpolated position embeddings: {old_n} → {new_n} tokens ({old_side}×{old_side} → {new_side}×{new_side})")
+
+    missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+    print(f"Loaded pretrained encoder from {checkpoint_path}")
+    print(f"  Missing (classifier, expected): {len(missing)}  Unexpected: {len(unexpected)}")
+
+    # Set (possibly interpolated) position embeddings
+    if pos_key is not None:
+        if hasattr(model.embedding, 'pos_space'):
+            model.embedding.pos_space.data = pos_weights.to(pos_weights.dtype).to(device)
+        else:
+            model.embedding.position_embeddings.data = pos_weights.to(pos_weights.dtype).to(device)
 
 
 # ---------------------------------------------------------------------------
@@ -232,15 +304,17 @@ def main():
         from vit_hyperbolic.config import Config
 
     parser = build_parser(Config)
-    parser.add_argument("--model",              default=pre_args.model, choices=IDMM_MODELS)
-    parser.add_argument("--stage",              choices=["pretrain", "finetune"], required=True)
-    parser.add_argument("--use_cutmix",         action="store_true", default=True)
-    parser.add_argument("--n_global_crops",     type=int, default=2)
-    parser.add_argument("--n_local_crops",      type=int, default=4)
+    parser.add_argument("--model",               default=pre_args.model, choices=IDMM_MODELS)
+    parser.add_argument("--stage",               choices=["pretrain", "finetune"], required=True)
+    parser.add_argument("--use_cutmix",          action="store_true", default=True)
+    parser.add_argument("--n_global_crops",      type=int, default=2)
+    parser.add_argument("--n_local_crops",       type=int, default=4)
+    # Paper: pretrain at 112×112, finetune at 224×224 (positional embeddings are interpolated)
+    parser.add_argument("--pretrain_image_size", type=int, default=112)
     parser.add_argument("--pretrain_checkpoint", default=None)
-    parser.add_argument("--checkpoint_dir",     default=None)
-    parser.add_argument("--data_dir",           default="data/")
-    parser.add_argument("--validation_size",    type=int, default=30)
+    parser.add_argument("--checkpoint_dir",      default=None)
+    parser.add_argument("--data_dir",            default="data/")
+    parser.add_argument("--validation_size",     type=int, default=30)
     args = parser.parse_args()
     cfg = cfg_from_args(args, Config)
 
@@ -251,11 +325,14 @@ def main():
     device = torch.device(cfg.device)
     run_start = time.perf_counter()
 
-    vit = build_vit(args.model, cfg, device)
-
     if args.stage == "pretrain":
+        # Build model at pretrain resolution (default 112×112, fewer tokens = faster)
+        pretrain_cfg = copy.copy(cfg)
+        pretrain_cfg.image_size = args.pretrain_image_size
+        vit = build_vit(args.model, pretrain_cfg, device)
+
         multicrop_tf = MultiCropTransform(
-            size=cfg.image_size,
+            size=args.pretrain_image_size,
             n_global=args.n_global_crops,
             n_local=args.n_local_crops,
         )
@@ -272,6 +349,7 @@ def main():
         trainloader = DataLoader(
             indexed_train, batch_size=cfg.batch_size, shuffle=True,
             drop_last=True, collate_fn=multicrop_collate,
+            num_workers=8, pin_memory=True,
         )
 
         optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
@@ -294,14 +372,11 @@ def main():
             print(f"Saved pretrained encoder: {ckpt_path}")
 
     elif args.stage == "finetune":
-        model = vit
+        # Build model at full resolution (224×224); positional embeddings are interpolated on load
+        vit = build_vit(args.model, cfg, device)
 
         if args.pretrain_checkpoint is not None:
-            state = torch.load(args.pretrain_checkpoint, map_location=device, weights_only=True)
-            encoder_state = {k: v for k, v in state["model"].items() if not k.startswith("classifier")}
-            missing, unexpected = model.load_state_dict(encoder_state, strict=False)
-            print(f"Loaded pretrained encoder from {args.pretrain_checkpoint}")
-            print(f"  Missing (classifier, expected): {len(missing)}  Unexpected: {len(unexpected)}")
+            load_pretrained_encoder(vit, args.pretrain_checkpoint, cfg, device)
 
         dataset, _ = get_dataset(
             cfg.dataset, data_dir=args.data_dir,
@@ -311,15 +386,15 @@ def main():
         trainloader = dataloaders["train"]
         testloader  = dataloaders["test"]
 
-        optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+        optimizer = optim.AdamW(vit.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
         scheduler = build_scheduler(cfg, optimizer)
 
         for epoch in range(cfg.epochs):
-            train_loss, train_acc = finetune_one_epoch(model, trainloader, optimizer, loss_fn, device)
+            train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device)
             if scheduler is not None:
                 scheduler.step()
-            acc, test_loss = evaluate(model, testloader, loss_fn, device)
+            acc, test_loss = evaluate(vit, testloader, loss_fn, device)
             print(
                 f"Epoch: {epoch + 1}, "
                 f"Train loss: {train_loss:.4f}, Train accuracy: {train_acc:.4f}, "
@@ -329,7 +404,7 @@ def main():
         if args.checkpoint_dir is not None:
             ckpt_path = Path(args.checkpoint_dir) / f"idmm_finetuned_{args.model}.pt"
             ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"model": model.state_dict()}, ckpt_path)
+            torch.save({"model": vit.state_dict()}, ckpt_path)
             print(f"Saved finetuned model: {ckpt_path}")
 
     total_time = time.perf_counter() - run_start
