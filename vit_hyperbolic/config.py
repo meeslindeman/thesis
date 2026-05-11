@@ -14,7 +14,7 @@ class Config(BaseConfig):
 
     # optimizer
     optimizer: str = "adamw"    # adamw | riemannian
-    weight_decay: float = 1e-2
+    weight_decay: float = 0.1
 
     # residual connection scaling
     residual_weight_init: float = 0.0

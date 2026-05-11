@@ -70,17 +70,6 @@ class LorentzTransformerBlock(nn.Module):
             normalize_variance=False,
         )
 
-        # self.batchnorm1 = LorentzGyroBN1d(
-        #     num_features=config["hidden_size"] + 1,
-        #     manifold=config["manifold"],
-        #     normalize_variance=False
-        # )
-        # self.batchnorm2 = LorentzGyroBN1d(
-        #     num_features=config["hidden_size"] + 1,
-        #     manifold=config["manifold"],
-        #     normalize_variance=False
-        # )
-
         # geodesic: weight is t passed through sigmoid, init 0.0 → sigmoid(0)=0.5 (midpoint)
         # lorentz_residual / others: weight is wy used with abs(), init 1.0 (equal-weight midpoint)
         res_scale_init = config["residual_weight_init"]
@@ -102,7 +91,6 @@ class LorentzTransformerBlock(nn.Module):
         residual = x
         x_normed = self.batchnorm2(x) if self.layernorm else x
         mlp_output = self.mlp(x_normed)
-
 
         out = self.manifold.geodesic_residual(residual, mlp_output, weight=torch.sigmoid(self.res_scale_mlp))
         out = self.manifold.gyro_scale(out, self.delta)

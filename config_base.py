@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 
 DATASET_CONFIGS = {
-    "cifar10":  {"image_size": 32, "num_classes": 10,  "num_channels": 3},
-    "cifar100": {"image_size": 32, "num_classes": 100, "num_channels": 3},
+    "cifar10":       {"image_size": 32, "num_classes": 10,  "num_channels": 3},
+    "cifar100":      {"image_size": 32, "num_classes": 100, "num_channels": 3},
+    "tiny_imagenet": {"image_size": 64, "num_classes": 200, "num_channels": 3},
 }
 
 @dataclass
@@ -22,7 +23,7 @@ class BaseConfig:
     num_channels: int = field(init=False)
 
     # early stopping (0 = disabled)
-    patience: int = 10
+    patience: int = 5
 
     # model (common to all three variants)
     patch_size: int = 4

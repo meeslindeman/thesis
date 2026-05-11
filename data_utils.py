@@ -1,21 +1,83 @@
+import urllib.request
+import zipfile
 import torch
 import numpy as np
-from torch.utils.data import DataLoader, random_split
+from pathlib import Path
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, CIFAR100
+from torchvision.datasets import CIFAR10, CIFAR100, ImageFolder
+
+_TINY_IN_URL = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
+
+
+class TinyImageNet(Dataset):
+    def __init__(self, root, train=True, transform=None, download=False):
+        self.root = Path(root)
+        self.data_dir = self.root / "tiny-imagenet-200"
+        self.transform = transform
+
+        if download:
+            self._download()
+        if not self.data_dir.exists():
+            raise RuntimeError("Tiny ImageNet not found. Pass download=True.")
+
+        if train:
+            folder = ImageFolder(self.data_dir / "train")
+            self.samples = folder.samples
+        else:
+            wnids = sorted((self.data_dir / "wnids.txt").read_text().strip().split("\n"))
+            class_to_idx = {w: i for i, w in enumerate(wnids)}
+            img_dir = self.data_dir / "val" / "images"
+            self.samples = [
+                (str(img_dir / parts[0]), class_to_idx[parts[1]])
+                for line in (self.data_dir / "val" / "val_annotations.txt").read_text().strip().split("\n")
+                for parts in [line.split("\t")]
+            ]
+
+    def _download(self):
+        if self.data_dir.exists():
+            return
+        zip_path = self.root / "tiny-imagenet-200.zip"
+        if not zip_path.exists():
+            print("Downloading Tiny ImageNet...")
+            urllib.request.urlretrieve(_TINY_IN_URL, zip_path)
+        print("Extracting Tiny ImageNet...")
+        with zipfile.ZipFile(zip_path) as f:
+            f.extractall(self.root)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+        img = Image.open(path).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+        return img, label
+
 
 DATASET_REGISTRY = {
     "cifar10": {
         "cls": CIFAR10,
         "num_classes": 10,
+        "image_size": 32,
         "mean": (0.49139968, 0.48215841, 0.44653091),
         "std":  (0.24703223, 0.24348513, 0.26158784),
     },
     "cifar100": {
         "cls": CIFAR100,
         "num_classes": 100,
+        "image_size": 32,
         "mean": (0.50707516, 0.48654887, 0.44091784),
         "std":  (0.26733429, 0.25643846, 0.27615047),
+    },
+    "tiny_imagenet": {
+        "cls": TinyImageNet,
+        "num_classes": 200,
+        "image_size": 64,
+        "mean": (0.4802, 0.4481, 0.3975),
+        "std":  (0.2302, 0.2265, 0.2262),
     },
 }
 
@@ -36,9 +98,10 @@ def numpy_collate_fn(batch):
 
 
 def _build_transforms(meta, train: bool):
+    size = meta["image_size"]
     if train:
         return transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
+            transforms.RandomCrop(size, padding=size // 8),
             transforms.RandomHorizontalFlip(),
             transforms.RandAugment(num_ops=2, magnitude=9),
             transforms.ToTensor(),
