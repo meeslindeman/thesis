@@ -66,7 +66,7 @@ Both stages run in the same allocation. Logs go to `out/idmm/slurm_<jobid>.out`.
 | Weight decay | 1e-3 | 1e-3 |
 | Scheduler | cosine | cosine |
 | Label smoothing | 0.1 | 0.1 |
-| CutMix α | 0.2 | — |
+| CutMix α | 0.5 | — |
 | Global crops | 2 | — |
 | Local crops | 4 | — |
 

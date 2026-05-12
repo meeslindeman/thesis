@@ -30,8 +30,10 @@ def _build_transforms(size: int, train: bool):
     mean, std = _IMAGENET_MEAN, _IMAGENET_STD
     if train:
         return transforms.Compose([
-            transforms.RandomResizedCrop(size),
+            transforms.RandomResizedCrop(size, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.4),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandAugment(),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),

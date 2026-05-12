@@ -35,7 +35,7 @@ MLP_DIM=768
 PATCH_SIZE=16          # 112/16=7×7=49 tokens (pretrain), 224/16=14×14=196 tokens (finetune)
 
 DATA_DIR=data/
-VALIDATION_SIZE=30
+VALIDATION_SIZE=0
 CKPT_DIR="checkpoints/idmm/${DATASET}/${MODEL}"
 
 # curvature is only a valid flag for hyperbolic

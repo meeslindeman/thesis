@@ -78,7 +78,7 @@ class MultiCropTransform:
             ])
 
         self.crop_transforms = (
-            [_make_tf((0.4, 1.0))] * n_global +
+            [_make_tf((0.14, 1.0))] * n_global +
             [_make_tf((0.05, 0.4))] * n_local
         )
 
@@ -147,7 +147,15 @@ class IDMMPretrainModel(nn.Module):
 # CutMix
 # ---------------------------------------------------------------------------
 
-def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.2):
+def mixup_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.5):
+    """Mixup: linearly interpolate two randomly paired images."""
+    lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    idx = torch.randperm(images.size(0), device=images.device)
+    mixed = lam * images + (1 - lam) * images[idx]
+    return mixed, labels, labels[idx], lam
+
+
+def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.5):
     """CutMix. lam=max(lam,1-lam) so original image always dominates (lam>=0.5)."""
     B, _, H, W = images.shape
     lam = torch.distributions.Beta(alpha, alpha).sample().item()
@@ -171,11 +179,12 @@ def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.2)
 # Training loops
 # ---------------------------------------------------------------------------
 
-def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label_smoothing: float):
+def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label_smoothing: float, n_global_crops: int = 2):
     """
     Instance discrimination over all crops.
-    Gradients are accumulated across crops before each optimizer step,
-    keeping peak memory at one crop-batch at a time.
+    CutMix is applied only to global crops (matching the paper's code);
+    local crops use plain CE. Gradients are accumulated across all crops
+    before each optimizer step, keeping peak memory at one crop-batch at a time.
     """
     model.train()
     loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
@@ -188,9 +197,9 @@ def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label
         optimizer.zero_grad(set_to_none=True)
         batch_loss = 0.0
 
-        for crop in crops:
+        for i, crop in enumerate(crops):
             crop = crop.to(device, non_blocking=True)
-            if use_cutmix:
+            if use_cutmix and i < n_global_crops:
                 crop, idx_a, idx_b, lam = cutmix_batch(crop, instance_idx)
                 logits = model(crop)
                 loss = (lam * loss_fn(logits, idx_a) + (1 - lam) * loss_fn(logits, idx_b)) / n_crops
@@ -206,20 +215,28 @@ def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label
     return total_loss / len(loader.dataset)
 
 
-def finetune_one_epoch(model, loader, optimizer, loss_fn, device):
+def finetune_one_epoch(model, loader, optimizer, loss_fn, device, epoch: int):
+    """Alternate Mixup (even epochs) and CutMix (odd epochs), matching the paper."""
     model.train()
     total_loss, correct = 0.0, 0
+    use_mixup = (epoch % 2 == 0)
 
     for images, labels in loader:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
         optimizer.zero_grad(set_to_none=True)
+
+        if use_mixup:
+            images, labels_a, labels_b, lam = mixup_batch(images, labels)
+        else:
+            images, labels_a, labels_b, lam = cutmix_batch(images, labels)
+
         logits = model(images)
-        loss = loss_fn(logits, labels)
+        loss = lam * loss_fn(logits, labels_a) + (1 - lam) * loss_fn(logits, labels_b)
         loss.backward()
         optimizer.step()
         total_loss += loss.item() * images.size(0)
-        correct += (logits.detach().argmax(dim=1) == labels).sum().item()
+        correct += (logits.detach().argmax(dim=1) == labels_a).sum().item()
 
     n = len(loader.dataset)
     return total_loss / n, correct / n
@@ -360,6 +377,7 @@ def main():
                 model, trainloader, optimizer, device,
                 use_cutmix=args.use_cutmix,
                 label_smoothing=cfg.label_smoothing,
+                n_global_crops=args.n_global_crops,
             )
             if scheduler is not None:
                 scheduler.step()
@@ -382,7 +400,7 @@ def main():
             cfg.dataset, data_dir=args.data_dir,
             validation_size=args.validation_size,
         )
-        dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
+        dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=False)
         trainloader = dataloaders["train"]
         testloader  = dataloaders["test"]
 
@@ -391,7 +409,7 @@ def main():
         scheduler = build_scheduler(cfg, optimizer)
 
         for epoch in range(cfg.epochs):
-            train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device)
+            train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device, epoch)
             if scheduler is not None:
                 scheduler.step()
             acc, test_loss = evaluate(vit, testloader, loss_fn, device)
