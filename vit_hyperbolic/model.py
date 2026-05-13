@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from vit_hyperbolic.blocks.embeddings import LorentzEmbeddings
 from vit_hyperbolic.blocks.encoder import LorentzEncoder
-from layers.LLinear import LorentzFullyConnected
+from vit_hyperbolic.linear import LorentzFullyConnected
 
 
 class LorentzViT(nn.Module):

@@ -129,7 +129,7 @@ def cfg_from_args(args: argparse.Namespace, Config):
 
 
 # Training / evaluation loops
-def train_one_epoch(model, trainloader, optimizer, loss_fn, device) -> tuple[float, float]:
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: float = 0.0) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
     correct = 0
@@ -140,6 +140,8 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device) -> tuple[flo
         logits = model(images)
         loss = loss_fn(logits, labels)
         loss.backward()
+        if grad_clip > 0.0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
         total_loss += loss.item() * images.size(0)
         correct += (logits.detach().argmax(dim=1) == labels).sum().item()

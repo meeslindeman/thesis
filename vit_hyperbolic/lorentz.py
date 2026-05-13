@@ -54,7 +54,8 @@ class Lorentz(nn.Module):
         Numerically stable <x,y>_L for points on the hyperboloid.
         Uses x_s·y_s = (‖x_s‖² + ‖y_s‖² - ‖x_s-y_s‖²) / 2
         to avoid cancellation between large time and space terms.
-        Both x, y must be float32 and on the manifold.
+        Safe to call in bf16 — the polarization identity eliminates the
+        catastrophic cancellation that would otherwise require float32.
         """
         x0  = x[..., :1]
         y0  = y[..., :1]
@@ -74,24 +75,18 @@ class Lorentz(nn.Module):
 
     def lorentz_distance(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
         """Lorentz distance: d(x,y) = (1/sqrt(k)) * arcosh(-k <x,y>_L)."""
-        k   = self.k().to(dtype=x.dtype, device=x.device)
-        xf  = x.float()
-        yf  = y.float()
-        ip  = self.inner_stable(xf, yf)
-        alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
-        return (torch.acosh(alpha) / torch.sqrt(k.float())).to(x.dtype)
+        k     = self.k().to(dtype=x.dtype, device=x.device)
+        ip    = self.inner_stable(x, y)
+        alpha = (-k * ip).clamp_min(1.0 + self.eps)
+        return torch.acosh(alpha) / torch.sqrt(k)
 
     def lorentz_distance2(self, x: torch.Tensor, y: torch.Tensor, dim: int = -1) -> torch.Tensor:
-        """
-        Squared geodesic distance: d_L(x,y)^2 = acosh( -k <x,y>_L )^2 / k
-        """
-        k   = self.k().to(dtype=x.dtype, device=x.device)
-        xf  = x.float()
-        yf  = y.float()
-        ip  = self.inner_stable(xf, yf)
-        alpha = (-k.float() * ip).clamp_min(1.0 + self.eps)
-        ac  = torch.acosh(alpha)
-        return ((ac * ac) / k.float()).to(x.dtype)
+        """Squared geodesic distance: d_L(x,y)^2 = acosh(-k <x,y>_L)^2 / k."""
+        k     = self.k().to(dtype=x.dtype, device=x.device)
+        ip    = self.inner_stable(x, y)
+        alpha = (-k * ip).clamp_min(1.0 + self.eps)
+        ac    = torch.acosh(alpha)
+        return (ac * ac) / k
 
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
         """Project space coords x to the hyperboloid by solving time from constraint."""
@@ -232,43 +227,36 @@ class Lorentz(nn.Module):
 
     def logmap(self, base_point: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """Log map at an arbitrary base point. Returns ambient tangent [...,1+D] at base_point."""
-        bp = base_point.float()
-        y = x.float()
-        k = self.k().float()
+        k      = self.k().to(dtype=x.dtype, device=x.device)
         sqrt_k = torch.sqrt(k)
 
-        if bp.dim() < y.dim():
-            bp = bp.unsqueeze(-2)
+        if base_point.dim() < x.dim():
+            base_point = base_point.unsqueeze(-2)
 
-        xy     = self.inner_stable(bp, y)
+        xy     = self.inner_stable(base_point, x)
         alpha  = (-k * xy).clamp_min(1.0 + self.eps)
         dist   = torch.acosh(alpha) / sqrt_k
-        u      = y + (k * xy) * bp
+        u      = x + (k * xy) * base_point
         norm_u = (torch.sinh(sqrt_k * dist) / sqrt_k).clamp_min(1e-9)
         out    = dist * (u / norm_u)
-        out    = self.proju(bp, out, dim=-1)
-        return out.to(x.dtype)
+        return self.proju(base_point, out, dim=-1)
 
     def expmap(self, base_point: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         """Exponential map at an arbitrary base point. Expects ambient tangent v in T_x."""
         if base_point.dim() == 2 and v.dim() == 3:
             base_point = base_point.unsqueeze(1)
 
-        bp = base_point.float()
-        vf = v.float()
-        k = self.k().float()
+        k      = self.k().to(dtype=base_point.dtype, device=base_point.device)
         sqrt_k = torch.sqrt(k)
 
-        vv     = self.inner(vf, vf, keepdim=True, dim=-1).clamp_min(1e-8)
+        vv     = self.inner(v, v, keepdim=True, dim=-1).clamp_min(1e-8)
         norm_v = torch.sqrt(vv)
         arg    = sqrt_k * norm_v
 
         left  = torch.cosh(arg)
         right = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
-        out   = left * bp + right * vf
-        out   = self.projx(out, dim=-1)
-
-        return out.to(base_point.dtype)
+        out   = left * base_point + right * v
+        return self.projx(out, dim=-1)
 
     def parallel_transport(self, base_point: torch.Tensor, tangent_vec: torch.Tensor, to_point: torch.Tensor) -> torch.Tensor:
         """Parallel transport of tangent_vec from base_point to to_point (broadcasting over token dim)."""
@@ -332,17 +320,6 @@ class Lorentz(nn.Module):
             v = self.logmap(xf, yf).float()
             v = v * weight
             out = self.expmap(xf, v)
-        return out.to(x.dtype)
-
-    def tangent_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 1.0) -> torch.Tensor:
-        """Residual: Exp_0(Log_0(x) + weight * Log_0(y))."""
-        with torch.autocast(device_type="cuda", enabled=False):
-            xf = x.float()
-            yf = y.float()
-            log_x = self.logmap0(xf)
-            log_y = self.logmap0(yf)
-            combined = log_x + weight * log_y
-            out = self.expmap0(combined[..., 1:])
         return out.to(x.dtype)
 
     def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 1.0, wy: float = 1.0, eps: float = 1e-9) -> torch.Tensor:

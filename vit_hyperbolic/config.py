@@ -4,7 +4,8 @@ from config_base import BaseConfig
 @dataclass
 class Config(BaseConfig):
     # override base defaults — hyperbolic manifold ops are sensitive to high LR
-    lr: float = 1e-4
+    lr: float = 4.35e-3
+    grad_clip: float = 1.0
     dropout_rate: float = 0.0
 
     # shared with euclidean but not in base (attention dropout, patch settings)
@@ -14,7 +15,7 @@ class Config(BaseConfig):
 
     # optimizer
     optimizer: str = "adamw"    # adamw | riemannian
-    weight_decay: float = 0.1
+    weight_decay: float = 5e-2  # 0.1
 
     # residual connection scaling
     residual_weight_init: float = 0.0
@@ -32,4 +33,4 @@ class Config(BaseConfig):
     # layer initialisation
     reset_params: str = "lorentz_kaiming"
     a_default: float = 0.0
-    use_weight_norm: bool = False
+    use_weight_norm: bool = True

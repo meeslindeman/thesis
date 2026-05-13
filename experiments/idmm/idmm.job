@@ -23,7 +23,7 @@ mkdir -p out/idmm
 # Dataset and model
 # -------------------------
 DATASET=flowers102     # flowers102 | pets | dtd | aircrafts
-MODEL=euclidean       # euclidean | hyperbolic
+MODEL=hyperbolic       # euclidean | hyperbolic
 
 # -------------------------
 # Architecture — DeiT-Tiny/16 as in the paper

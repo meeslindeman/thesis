@@ -129,7 +129,7 @@ def main():
         print(f"Resumed from epoch {start_epoch} (acc={best_acc:.4f})")
 
     for epoch in range(start_epoch, cfg.epochs):
-        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device)
+        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip)
         if scheduler is not None:
             scheduler.step()
         acc, test_loss = evaluate(model, testloader, loss_fn, device)

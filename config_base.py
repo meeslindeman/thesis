@@ -46,6 +46,9 @@ class BaseConfig:
     scheduler: str = "none"
     warmup_epochs: int = 10
 
+    # gradient clipping (0.0 = disabled)
+    grad_clip: float = 0.0
+
     def __post_init__(self):
         if self.dataset not in DATASET_CONFIGS:
             raise ValueError(f"Unknown dataset '{self.dataset}'. Available: {list(DATASET_CONFIGS)}")

@@ -4,7 +4,7 @@ import torch.nn as nn
 from vit_hyperbolic.blocks.attention import LorentzMHA
 from vit_hyperbolic.blocks.batchnorm import LorentzBatchNorm1d
 from vit_hyperbolic.blocks.batchnorm_gyro import LorentzGyroBN1d
-from layers.LLinear import LorentzFullyConnected
+from vit_hyperbolic.linear import LorentzFullyConnected
 
 
 class LorentzMLP(nn.Module):
@@ -48,12 +48,10 @@ class LorentzTransformerBlock(nn.Module):
             curvature=config["curvature"],
             num_heads=config["num_attention_heads"],
             compute_scores=config["compute_scores"],
-            head_mode=config["head_mode"],
             concat_mode=config["concat_mode"],
             reset_params=config["reset_params"],
             a_default=config["a_default"],
             attn_mask=config.get("attn_mask", None),
-            dropout_rate=config["dropout_rate"],
             attn_dropout_rate=config["attn_dropout_rate"],
             use_weight_norm=config["use_weight_norm"]
         )

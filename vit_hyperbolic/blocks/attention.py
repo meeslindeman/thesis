@@ -5,28 +5,25 @@ import torch.nn.functional as F
 from typing import Literal
 
 from vit_hyperbolic.lorentz import Lorentz
-from layers.LLinear import LorentzFullyConnected
+from vit_hyperbolic.linear import LorentzFullyConnected
 
 
-HeadMode = Literal["full_midpoint", "split_concat"]
 ConcatMode = Literal["direct", "logradius"]
 
 
 class LorentzMHA(nn.Module):
     def __init__(
-            self, 
-            input_dim: int, 
-            curvature: float = 0.1, 
-            num_heads: int = 1, 
-            compute_scores: str = "lorentz_inner", 
+            self,
+            input_dim: int,
+            curvature: float = 1.0,
+            num_heads: int = 1,
+            compute_scores: str = "lorentz_inner",
             *,
-            head_mode: HeadMode = "full_midpoint",
             concat_mode: ConcatMode = "direct",
             out_dim: int | None = None,
             reset_params: str = "lorentz_kaiming",
             a_default: float = 0.0,
             attn_mask: torch.Tensor | None = None,
-            dropout_rate: float = 0.0,
             attn_dropout_rate: float = 0.0,
             use_weight_norm: bool = False
         ) -> None:
@@ -39,29 +36,17 @@ class LorentzMHA(nn.Module):
         self.curvature = curvature
         self.num_heads = num_heads
         self.compute_scores = compute_scores
-        self.attn_mask = attn_mask 
+        self.attn_mask = attn_mask
 
         self.manifold = Lorentz(curvature)
 
-        self.head_mode = head_mode
+        if self.spatial_dim % self.num_heads != 0:
+            raise ValueError(f"spatial_dim {self.spatial_dim} not divisible by num_heads {self.num_heads}")
+        self.head_spatial_dim = self.spatial_dim // self.num_heads
 
-        if head_mode == "full_midpoint":
-            # Each head has full dimension, fused by Lorentz midpoint
-            self.head_fusion = "midpoint"
-            self.head_spatial_dim = self.spatial_dim 
-        
-        elif head_mode == "split_concat":
-            # Split only spatial dimensions among heads, fused by concatenation
-            if self.spatial_dim % self.num_heads != 0:
-                raise ValueError(f"spatial_dim {self.spatial_dim} not divisible by num_heads {self.num_heads}")
-            self.head_spatial_dim = self.spatial_dim // self.num_heads
-
-            if concat_mode not in ("direct", "logradius"):
-                raise ValueError(f"Unknown concat_mode: {concat_mode}")
-            self.head_fusion = f"concat_{concat_mode}"
-        
-        else:
-            raise ValueError("head_mode must be one of: 'full_midpoint', 'split_concat'")
+        if concat_mode not in ("direct", "logradius"):
+            raise ValueError(f"Unknown concat_mode: {concat_mode}")
+        self.head_fusion = f"concat_{concat_mode}"
 
         # Per-head Lorentz dimension: 1 + d_head
         self.head_lorentz_dim = self.head_spatial_dim + 1   # D_head
@@ -133,6 +118,18 @@ class LorentzMHA(nn.Module):
             )
             self.register_buffer("log_radius_scale", s_val)
         
+    def _batched_project(self, x: torch.Tensor, W_list: nn.ModuleList) -> torch.Tensor:
+        """Project x through all heads in a single batched matmul."""
+        B, N, _ = x.shape
+        # Stack V matrices along output dim: (D_in, H * head_spatial_dim)
+        V = torch.cat([W.create_spacelike_vector() for W in W_list], dim=1)
+        # Single matmul: (B, N, D_in) @ (D_in, H*head_spatial_dim) -> (B, N, H*head_spatial_dim)
+        out_space = x @ V
+        # Reshape to (B, N, H, head_spatial_dim) then project to hyperboloid
+        out_space = out_space.view(B, N, self.num_heads, self.head_spatial_dim)
+        out = self.manifold.projection_space_orthogonal(out_space)  # (B, N, H, D_head)
+        return out.permute(0, 2, 1, 3).contiguous()  # (B, H, N, D_head)
+
     @staticmethod
     def _lorentz_inner(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x_t, x_x = x[..., :1], x[..., 1:]  # [B, H, N, 1], [B, H, N, head_spatial_dim]
@@ -190,15 +187,14 @@ class LorentzMHA(nn.Module):
         return out
 
     def forward(self, x: torch.Tensor, *, attn_mask: torch.Tensor | None = None, return_attn: bool = False) -> torch.Tensor:
-        B, N, D = x.shape
+        B, _, D = x.shape
         if D != self.lorentz_dim:
             raise ValueError(f"Expected last dim {self.lorentz_dim}, got {D}")
 
-        # Per-head Q/K/V projections
-        # Each head maps [B, N, D] -> q_h/k_h/v_h: [B, N, D_head]
-        q = torch.stack([W(x) for W in self.W_q], dim=1)  # [B, H, N, D_head]
-        k = torch.stack([W(x) for W in self.W_k], dim=1)  # [B, H, N, D_head]
-        v = torch.stack([W(x) for W in self.W_v], dim=1)  # [B, H, N, D_head]
+        # Per-head Q/K/V projections via single batched matmul per projection type
+        q = self._batched_project(x, self.W_q)  # [B, H, N, D_head]
+        k = self._batched_project(x, self.W_k)  # [B, H, N, D_head]
+        v = self._batched_project(x, self.W_v)  # [B, H, N, D_head]
 
         # Attention scores ([B, H, N, N])
         # Scale uses spatial head dim
@@ -241,27 +237,13 @@ class LorentzMHA(nn.Module):
         
         # Fuse heads into a single Lorentz representation of full dim D = 1 + d
         if self.num_heads == 1:
-            # [B, 1, N, D_head] -> [B, N, D_head]
-            out = out_heads.squeeze(1)  
+            out = out_heads.squeeze(1)  # [B, 1, N, D_head] -> [B, N, D_head]
+        elif self.head_fusion == "concat_direct":
+            out = self._concat_heads_direct(out_heads)   # [B, H, N, D_head] -> [B, N, D]
+        elif self.head_fusion == "concat_logradius":
+            out = self._concat_heads_log_radius(out_heads)  # [B, H, N, D_head] -> [B, N, D]
         else:
-            if self.head_fusion == "midpoint":
-                # out_heads: [B, H, N, D] -> midpoint over H for each (B,N)
-                # Permute to [B, N, H, D], then flatten (B*N) for manifold call.
-                out = out_heads.permute(0, 2, 1, 3).contiguous()  # [B, N, H, D]
-                out = out.view(B * N, self.num_heads, self.lorentz_dim)  # [B*N, H, D]
-                out = self.manifold.lorentz_midpoint(out)  # [B*N, D]
-                out = out.view(B, N, self.lorentz_dim)  # [B, N, D]
-
-            elif self.head_fusion == "concat_direct":
-                # out_heads: [B, H, N, D_head] -> [B, N, D]
-                out = self._concat_heads_direct(out_heads)
-
-            elif self.head_fusion == "concat_logradius":
-                # out_heads: [B, H, N, D_head] -> [B, N, D]
-                out = self._concat_heads_log_radius(out_heads)
-            
-            else:
-                raise ValueError(f"Unknown head_fusion mode: {self.head_fusion}")
+            raise ValueError(f"Unknown head_fusion mode: {self.head_fusion}")
 
         out = self.W_o(out) # [B, N, D] -> [B, N, 1 + out_dim]
 
