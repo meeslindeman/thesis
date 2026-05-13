@@ -7,10 +7,10 @@ class Config(BaseConfig):
     lr: float = 4.35e-3
     grad_clip: float = 0.0
     dropout_rate: float = 0.0
+    stochastic_depth: float = 0.0
 
     # shared with euclidean but not in base (attention dropout, patch settings)
     attn_dropout_rate: float = 0.1
-    stochastic_depth: float = 0.0
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
 
@@ -33,4 +33,4 @@ class Config(BaseConfig):
     # layer initialisation
     reset_params: str = "lorentz_kaiming"
     a_default: float = 0.0
-    use_weight_norm: bool = True
+    use_weight_norm: bool = False
