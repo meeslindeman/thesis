@@ -72,7 +72,6 @@ def build_optimizer(model_name: str, model, cfg):
         return _build(model, cfg)
 
 
-
 def main():
     # Phase 1: extract --model before building the full parser, so each model's
     # config fields are correctly registered (and --help shows the right ones).

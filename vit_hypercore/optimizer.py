@@ -25,6 +25,5 @@ def build_optimizer(model, cfg) -> DualOptimizer:
     euclidean_params = [p for p in model.parameters() if not isinstance(p, ManifoldParameter)]
 
     opt_euc = optim.AdamW(euclidean_params, lr=cfg.lr, weight_decay=cfg.weight_decay)
-    opt_hyp = RiemannianAdam(manifold_params, lr=cfg.hyp_lr, weight_decay=cfg.hyp_weight_decay,
-                             stabilize=cfg.stabilize)
+    opt_hyp = RiemannianAdam(manifold_params, lr=cfg.hyp_lr, weight_decay=cfg.hyp_weight_decay, stabilize=cfg.stabilize)
     return DualOptimizer(opt_euc, opt_hyp)

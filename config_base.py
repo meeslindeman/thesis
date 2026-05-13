@@ -18,7 +18,7 @@ class BaseConfig:
     batch_size: int = 256
     epochs: int = 30
     lr: float = 1e-3
-    weight_decay: float = 0.1
+    weight_decay: float = 1e-1
     device: str = "auto"
     seed: int = 0
 
@@ -29,7 +29,7 @@ class BaseConfig:
     num_channels: int = field(init=False)
 
     # early stopping (0 = disabled)
-    patience: int = 5
+    patience: int = 0
 
     # model (common to all three variants)
     patch_size: int = 4
@@ -42,12 +42,15 @@ class BaseConfig:
     # loss
     label_smoothing: float = 0.1
 
-    # scheduler ("none", "cosine", "warmup_cosine")
-    scheduler: str = "none"
+    # scheduler ("none", "cosine", "warmup_cosine", "step")
+    scheduler: str = "warmup_cosine"
     warmup_epochs: int = 10
 
     # gradient clipping (0.0 = disabled)
     grad_clip: float = 0.0
+
+    # default for hyperbolic models; ignored by Euclidean
+    curvature: float = 1.0   
 
     def __post_init__(self):
         if self.dataset not in DATASET_CONFIGS:

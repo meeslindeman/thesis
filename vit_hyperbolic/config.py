@@ -3,9 +3,9 @@ from config_base import BaseConfig
 
 @dataclass
 class Config(BaseConfig):
-    # override base defaults — hyperbolic manifold ops are sensitive to high LR
+    # override base defaults 
     lr: float = 4.35e-3
-    grad_clip: float = 1.0
+    grad_clip: float = 0.0
     dropout_rate: float = 0.0
 
     # shared with euclidean but not in base (attention dropout, patch settings)
@@ -26,7 +26,6 @@ class Config(BaseConfig):
 
     # hyperbolic geometry
     curvature: float = 1.0
-    head_mode: str = "split_concat"    # "split_concat" | "full_midpoint"
     concat_mode: str = "direct"        # "direct" | "logradius"
     compute_scores: str = "lorentz_inner"  # "lorentz_inner" | "signed_dist"
 

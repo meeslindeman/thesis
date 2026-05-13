@@ -8,7 +8,9 @@ from dataclasses import fields
 
 
 def _make_scheduler(cfg, opt):
-    if cfg.scheduler == "cosine":
+    if cfg.scheduler == "step":
+        return torch.optim.lr_scheduler.StepLR(opt, step_size=cfg.lr_step_size, gamma=cfg.lr_gamma)
+    elif cfg.scheduler == "cosine":
         return torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs, eta_min=1e-6)
     elif cfg.scheduler == "warmup_cosine":
         warmup = torch.optim.lr_scheduler.LinearLR(
@@ -30,11 +32,21 @@ def build_scheduler(cfg, optimizer):
             return None
 
         class DualScheduler:
+            def __init__(self, schedulers):
+                self.schedulers = schedulers
+
             def step(self):
-                for s in schedulers:
+                for s in self.schedulers:
                     s.step()
 
-        return DualScheduler()
+            def state_dict(self):
+                return [s.state_dict() for s in self.schedulers]
+
+            def load_state_dict(self, state):
+                for s, sd in zip(self.schedulers, state):
+                    s.load_state_dict(sd)
+
+        return DualScheduler(schedulers)
 
     return _make_scheduler(cfg, optimizer)
 
