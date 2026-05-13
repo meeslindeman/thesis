@@ -10,10 +10,11 @@ class Lorentz(nn.Module):
     The Lorentz model is defined as the hyperboloid in Minkowski space with curvature k > 0.
     The manifold is defined by the equation: <x,x>_L = -x_0^2 + x_1^2 + ... + x_n^2 = -1/k, with x_0 > 0 (upper sheet).
     """
-    def __init__(self, k: float = 1.0, requires_grad: bool = False, constraining_strategy: nn.Module = nn.Identity(), k_min: float = 1e-5, eps: float = 1e-5) -> None:
+    def __init__(self, k: float = 1.0, requires_grad: bool = False, constraining_strategy: nn.Module = nn.Identity(), k_min: float = 1e-5, eps: float = 1e-5, max_space_norm: float = 100.0) -> None:
         super().__init__()
         self.k_min = float(k_min)
         self.eps = float(eps)
+        self.max_space_norm = float(max_space_norm)
         self.constraining_strategy = constraining_strategy
         self._k = nn.Parameter(torch.tensor(float(k)), requires_grad=requires_grad)
 
@@ -90,8 +91,10 @@ class Lorentz(nn.Module):
 
     def projection_space_orthogonal(self, x: torch.Tensor, manifold_dim: int = -1) -> torch.Tensor:
         """Project space coords x to the hyperboloid by solving time from constraint."""
+        norm = x.norm(dim=manifold_dim, keepdim=True).clamp_min(self.eps)
+        x = x * (norm.clamp(max=self.max_space_norm) / norm)
         k = self.k()
-        time = torch.sqrt(torch.clamp(1.0 / self.k() + x.pow(2).sum(dim=manifold_dim, keepdim=True), min=self.eps))
+        time = torch.sqrt(torch.clamp(1.0 / k + x.pow(2).sum(dim=manifold_dim, keepdim=True), min=self.eps))
         return torch.cat([time, x], dim=manifold_dim)
 
     def radial_projection(self, x: torch.Tensor) -> torch.Tensor:
@@ -114,6 +117,8 @@ class Lorentz(nn.Module):
     def projx(self, x: torch.Tensor, *, dim: int = -1) -> torch.Tensor:
         """Project an ambient point to the hyperboloid by adjusting time coordinate only."""
         space = x.narrow(dim, 1, x.size(dim) - 1)
+        norm = space.norm(dim=dim, keepdim=True).clamp_min(self.eps)
+        space = space * (norm.clamp(max=self.max_space_norm) / norm)
         time = torch.sqrt(torch.clamp(1.0 / self.k() + (space * space).sum(dim=dim, keepdim=True), min=self.eps))
         return torch.cat([time, space], dim=dim)
 
@@ -251,7 +256,7 @@ class Lorentz(nn.Module):
 
         vv     = self.inner(v, v, keepdim=True, dim=-1).clamp_min(1e-8)
         norm_v = torch.sqrt(vv)
-        arg    = sqrt_k * norm_v
+        arg    = (sqrt_k * norm_v).clamp(max=85.0)
 
         left  = torch.cosh(arg)
         right = torch.where(arg < 1e-6, torch.ones_like(arg), torch.sinh(arg) / arg)
@@ -419,5 +424,3 @@ class Lorentz(nn.Module):
         time = x64[..., :1]
         space = x64[..., 1:]
         return -time * time + (space * space).sum(dim=-1, keepdim=True)
-
-
