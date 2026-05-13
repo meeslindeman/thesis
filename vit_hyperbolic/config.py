@@ -10,6 +10,7 @@ class Config(BaseConfig):
 
     # shared with euclidean but not in base (attention dropout, patch settings)
     attn_dropout_rate: float = 0.1
+    stochastic_depth: float = 0.0
     final_op: str = "pooling"
     patch_embed_type: str = "linear"
 

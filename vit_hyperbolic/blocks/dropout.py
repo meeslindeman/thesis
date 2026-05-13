@@ -3,10 +3,6 @@ import torch.nn as nn
 
 
 class ExtrinsicDropout(nn.Module):
-    """
-    Applies dropout to the spacelike components of a Lorentz vector, 
-    then projects back to the manifold.
-    """
     def __init__(self, config):
         super().__init__()
         self.manifold = config["manifold"]
@@ -72,3 +68,19 @@ class LorentzDropConnect(nn.Module):
         V = V * mask / (1.0 - self.p)
         output_space = self.layer.activation(x @ V)
         return self.layer.manifold.projection_space_orthogonal(output_space)
+    
+
+class DropPath(nn.Module):
+    def __init__(self, drop_prob: float = 0.0):
+        super().__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, branch: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.drop_prob == 0.0:
+            return branch
+        keep_shape = (branch.shape[0],) + (1,) * (branch.ndim - 1)
+        keep = torch.rand(keep_shape, device=branch.device) >= self.drop_prob
+        return torch.where(keep, branch, residual)
+
+    def extra_repr(self) -> str:
+        return f"drop_prob={self.drop_prob:.3f}"

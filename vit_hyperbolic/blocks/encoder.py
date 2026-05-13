@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from vit_hyperbolic.blocks.attention import LorentzMHA
 from vit_hyperbolic.blocks.batchnorm import LorentzBatchNorm1d
-from vit_hyperbolic.blocks.batchnorm_gyro import LorentzGyroBN1d
+from vit_hyperbolic.blocks.dropout import DropPath
 from vit_hyperbolic.linear import LorentzFullyConnected
 
 
@@ -38,7 +38,7 @@ class LorentzMLP(nn.Module):
 
 
 class LorentzTransformerBlock(nn.Module):
-    def __init__(self, config) -> None:
+    def __init__(self, config, drop_path_rate: float = 0.0) -> None:
         super().__init__()
         self.manifold = config["manifold"]
         self.layernorm = config["layernorm"]
@@ -73,25 +73,26 @@ class LorentzTransformerBlock(nn.Module):
         res_scale_init = config["residual_weight_init"]
         self.res_scale_att = nn.Parameter(torch.tensor(res_scale_init))
         self.res_scale_mlp = nn.Parameter(torch.tensor(res_scale_init))
-        
+
         init_delta = config["residual_delta_init"]
         self.delta = nn.Parameter(torch.tensor(float(init_delta)))
+
+        self.drop_path_att = DropPath(drop_path_rate)
+        self.drop_path_mlp = DropPath(drop_path_rate)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
 
         x_normed = self.batchnorm1(x) if self.layernorm else x
-        att_output = self.attention(x_normed)
-
-        x = self.manifold.geodesic_residual(residual, att_output, weight=torch.sigmoid(self.res_scale_att))
-        x = self.manifold.gyro_scale(x, self.delta)
+        att_out = self.manifold.geodesic_residual(residual, self.attention(x_normed), weight=torch.sigmoid(self.res_scale_att))
+        att_out = self.manifold.gyro_scale(att_out, self.delta)
+        x = self.drop_path_att(att_out, residual)
 
         residual = x
         x_normed = self.batchnorm2(x) if self.layernorm else x
-        mlp_output = self.mlp(x_normed)
-
-        out = self.manifold.geodesic_residual(residual, mlp_output, weight=torch.sigmoid(self.res_scale_mlp))
-        out = self.manifold.gyro_scale(out, self.delta)
+        mlp_out = self.manifold.geodesic_residual(residual, self.mlp(x_normed), weight=torch.sigmoid(self.res_scale_mlp))
+        mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
+        out = self.drop_path_mlp(mlp_out, residual)
 
         return out
 
@@ -102,8 +103,10 @@ class LorentzEncoder(nn.Module):
         n = config["num_hidden_layers"]
         self.manifold = config["manifold"]
 
+        max_drop = config.get("stochastic_depth", 0.0)
+        drop_rates = [max_drop * i / (n - 1) for i in range(n)] if n > 1 else [0.0]
         self.blocks = nn.ModuleList(
-            [LorentzTransformerBlock(config) for _ in range(n)]
+            [LorentzTransformerBlock(config, drop_path_rate=r) for r in drop_rates]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
