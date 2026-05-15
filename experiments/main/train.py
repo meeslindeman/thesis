@@ -57,6 +57,22 @@ def build_model(model: str, cfg):
         )
 
 
+def _hyperbolic_param_groups(model, lr, weight_decay):
+    decay, no_decay = [], []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if name.endswith(('.U', '.v')):
+            decay.append(param)
+        else:
+            no_decay.append(param)
+    return optim.AdamW(
+        [{'params': decay, 'weight_decay': weight_decay},
+         {'params': no_decay, 'weight_decay': 0.0}],
+        lr=lr,
+    )
+
+
 def build_optimizer(model_name: str, model, cfg):
     if model_name == "euclidean":
         return optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
@@ -65,7 +81,7 @@ def build_optimizer(model_name: str, model, cfg):
         if cfg.optimizer == "riemannian":
             from geoopt.optim import RiemannianAdam
             return RiemannianAdam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
-        return optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+        return _hyperbolic_param_groups(model, cfg.lr, cfg.weight_decay)
 
     if model_name == "hypercore":
         from vit_hypercore.optimizer import build_optimizer as _build

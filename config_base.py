@@ -17,8 +17,8 @@ class BaseConfig:
     # training
     batch_size: int = 256
     epochs: int = 30
-    lr: float = 1e-3
-    weight_decay: float = 1e-1
+    lr: float = 1.9e-4 # default for 256 batch size; scale linearly with batch size
+    weight_decay: float = 0.3
     device: str = "auto"
     seed: int = 0
 

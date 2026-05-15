@@ -62,31 +62,31 @@ class LorentzMHA(nn.Module):
                 reset_params=reset_params, 
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=use_weight_norm
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])
         self.W_k = nn.ModuleList([
             LorentzFullyConnected(
-                in_features=self.lorentz_dim, 
+                in_features=self.lorentz_dim,
                 out_features=self.head_lorentz_dim,
-                manifold=self.manifold, 
-                reset_params=reset_params, 
+                manifold=self.manifold,
+                reset_params=reset_params,
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=use_weight_norm
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])
         self.W_v = nn.ModuleList([
             LorentzFullyConnected(
-                in_features=self.lorentz_dim, 
-                out_features=self.head_lorentz_dim, 
-                manifold=self.manifold, 
-                reset_params=reset_params, 
+                in_features=self.lorentz_dim,
+                out_features=self.head_lorentz_dim,
+                manifold=self.manifold,
+                reset_params=reset_params,
                 a_default=a_default,
                 activation=nn.Identity(),
-                use_weight_norm=use_weight_norm
+                use_weight_norm=False
             )
             for _ in range(self.num_heads)
         ])

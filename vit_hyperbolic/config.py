@@ -4,7 +4,7 @@ from config_base import BaseConfig
 @dataclass
 class Config(BaseConfig):
     # override base defaults 
-    lr: float = 4.35e-3
+    lr: float = 1e-4
     grad_clip: float = 0.0
     dropout_rate: float = 0.0
     stochastic_depth: float = 0.0
@@ -16,7 +16,7 @@ class Config(BaseConfig):
 
     # optimizer
     optimizer: str = "adamw"    # adamw | riemannian
-    weight_decay: float = 5e-2  # 0.1
+    weight_decay: float = 0.1   # 0.1
 
     # residual connection scaling
     residual_weight_init: float = 0.0
@@ -32,5 +32,5 @@ class Config(BaseConfig):
 
     # layer initialisation
     reset_params: str = "lorentz_kaiming"
-    a_default: float = 0.0
+    a_default: float = 0.5
     use_weight_norm: bool = False
