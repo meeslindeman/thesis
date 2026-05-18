@@ -137,6 +137,10 @@ def main():
     best_acc = 0.0
     epochs_no_improve = 0
 
+    ckpt_path = None
+    if args.checkpoint_dir is not None:
+        ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}.pt"
+
     if args.resume is not None:
         state = load_checkpoint(args.resume, model, optimizer, scheduler, map_location=device)
         start_epoch = state.get("epoch", 0)
@@ -157,20 +161,18 @@ def main():
             f"Test accuracy: {acc:.4f}"
         )
 
-        if cfg.patience > 0:
-            if acc > best_acc:
-                best_acc = acc
-                epochs_no_improve = 0
-            else:
-                epochs_no_improve += 1
-            if epochs_no_improve >= cfg.patience:
-                print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
-                break
+        if acc > best_acc:
+            best_acc = acc
+            epochs_no_improve = 0
+            if ckpt_path is not None:
+                save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, acc=acc, model_name=args.model)
+                print(f"Saved checkpoint: {ckpt_path}")
+        else:
+            epochs_no_improve += 1
 
-    if args.checkpoint_dir is not None:
-        ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}.pt"
-        save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, acc=acc, model_name=args.model)
-        print(f"Saved checkpoint: {ckpt_path}")
+        if cfg.patience > 0 and epochs_no_improve >= cfg.patience:
+            print(f"Early stopping at epoch {epoch + 1} (no improvement for {cfg.patience} epochs)")
+            break
 
     total_time = time.perf_counter() - run_start
     print(f"Total training time: {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")

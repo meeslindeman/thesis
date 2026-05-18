@@ -32,5 +32,5 @@ class Config(BaseConfig):
 
     # layer initialisation
     reset_params: str = "lorentz_kaiming"
-    a_default: float = 0.5
+    a_default: float = 0.1
     use_weight_norm: bool = False
