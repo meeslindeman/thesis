@@ -18,16 +18,10 @@ from utils import build_parser, cfg_from_args, set_seed
 
 MODELS = ["euclidean", "hyperbolic", "hypercore"]
 
+from config_base import Config
+
 
 def get_config_class(model: str):
-    if model == "euclidean":
-        from vit.config import Config
-    elif model == "hyperbolic":
-        from vit_hyperbolic.config import Config
-    elif model == "hypercore":
-        from vit_hypercore.config import Config
-    else:
-        raise ValueError(f"Unknown model '{model}'. Choose from: {MODELS}")
     return Config
 
 

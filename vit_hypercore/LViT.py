@@ -7,7 +7,6 @@ from .manifold.lorentz import Lorentz
 
 
 class HyperbolicMLP(nn.Module):
-
     def __init__(self, manifold, in_channel, hidden_channel, dropout=0):
         super().__init__()
         self.manifold = manifold
@@ -25,7 +24,6 @@ class HyperbolicMLP(nn.Module):
 
 
 class LorentzTransformerBlock(nn.Module):
-
     def __init__(self, manifold, in_channel, hidden_channel, dropout=0, num_heads=1, output_attentions=False):
         super().__init__()
         self.num_heads = num_heads
@@ -48,7 +46,6 @@ class LorentzTransformerBlock(nn.Module):
 
 
 class LViTEncoder(nn.Module):
-
     def __init__(self, manifold_in, num_layers, in_channel, hidden_channel, num_heads=1, dropout=0, output_attentions=False, manifold_out=None):
         super().__init__()
         self.blocks = nn.ModuleList([])
@@ -68,7 +65,6 @@ class LViTEncoder(nn.Module):
 
 
 class LViT(nn.Module):
-
     def __init__(self,
                  manifold_in,
                  manifold_hidden,

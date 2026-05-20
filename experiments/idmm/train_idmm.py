@@ -315,10 +315,7 @@ def main():
     pre.add_argument("--model", default="hyperbolic", choices=IDMM_MODELS)
     pre_args, _ = pre.parse_known_args()
 
-    if pre_args.model == "euclidean":
-        from vit.config import Config
-    else:
-        from vit_hyperbolic.config import Config
+    from config_base import Config
 
     parser = build_parser(Config)
     parser.add_argument("--model",               default=pre_args.model, choices=IDMM_MODELS)

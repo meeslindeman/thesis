@@ -8,21 +8,16 @@ from dataclasses import asdict
 from pathlib import Path
 
 from data_utils import get_dataset, get_dataloader
-from utils import build_parser, cfg_from_args, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint, build_scheduler
+from utils import build_parser, cfg_from_args, load_yaml, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint, build_scheduler
 
 MODELS = ["euclidean", "hyperbolic", "hypercore"]
 
-
-def get_config_class(model: str):
-    if model == "euclidean":
-        from vit.config import Config
-    elif model == "hyperbolic":
-        from vit_hyperbolic.config import Config
-    elif model == "hypercore":
-        from vit_hypercore.config import Config
-    else:
-        raise ValueError(f"Unknown model '{model}'. Choose from: {MODELS}")
-    return Config
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MODEL_DIRS = {
+    "euclidean": REPO_ROOT / "vit",
+    "hyperbolic": REPO_ROOT / "vit_hyperbolic",
+    "hypercore":  REPO_ROOT / "vit_hypercore",
+}
 
 
 def build_model(model: str, cfg):
@@ -95,9 +90,10 @@ def main():
     pre.add_argument("--model", default="hyperbolic", choices=MODELS)
     pre_args, _ = pre.parse_known_args()
 
-    # Phase 2: build the full parser from the selected model's Config class.
-    Config = get_config_class(pre_args.model)
-    parser = build_parser(Config)
+    # Phase 2: load model YAML, then build parser with those as defaults.
+    from config_base import Config
+    yaml_overrides = load_yaml(MODEL_DIRS[pre_args.model] / "config.yml")
+    parser = build_parser(Config, yaml_overrides)
     parser.add_argument("--model", default=pre_args.model, choices=MODELS,
                         help="Which model to train (euclidean | hyperbolic | hypercore)")
     parser.add_argument("--checkpoint_dir", default=None,

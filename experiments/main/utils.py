@@ -1,10 +1,20 @@
 import argparse
+import dataclasses
 import random
 from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 from dataclasses import fields
+
+
+def load_yaml(path) -> dict:
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
 
 
 def _make_scheduler(cfg, opt):
@@ -115,13 +125,19 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None, map_location="c
 
 
 # Configuration and argument parsing
-def build_parser(Config) -> argparse.ArgumentParser:
-    defaults = Config()
+def build_parser(Config, yaml_overrides: dict = None) -> argparse.ArgumentParser:
+    yaml_overrides = yaml_overrides or {}
     p = argparse.ArgumentParser()
     for f in fields(Config):
         if not f.init:
             continue
-        name, t, default_val = f.name, f.type, getattr(defaults, f.name)
+        name, t = f.name, f.type
+        if name in yaml_overrides:
+            default_val = yaml_overrides[name]
+        elif f.default is not dataclasses.MISSING:
+            default_val = f.default
+        else:
+            default_val = None
         if t is bool:
             group = p.add_mutually_exclusive_group(required=False)
             group.add_argument(f"--{name}", dest=name, action="store_true")

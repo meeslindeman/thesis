@@ -1,0 +1,32 @@
+# LorentzViT 
+# Architecture 
+hidden_size: 192
+num_hidden_layers: 12
+num_attention_heads: 3
+mlp_dim: 768
+patch_size: 4
+
+# Optimizer 
+lr: 1.0e-4
+weight_decay: 0.1
+optimizer: adamw
+scheduler: warmup_cosine
+warmup_epochs: 10
+
+# Regularization
+dropout_rate: 0.0
+attn_dropout_rate: 0.1
+stochastic_depth_rate: 0.1
+label_smoothing: 0.1
+layernorm: true
+
+# Hyperbolic 
+curvature: 1.0
+residual_weight_init: 0.0
+residual_delta_init: 2.0
+concat_mode: direct
+compute_scores: lorentz_inner
+reset_params: xavier
+a_default: 0.05
+use_weight_norm: false
+

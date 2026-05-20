@@ -38,7 +38,7 @@ class LorentzMLP(nn.Module):
 
 
 class LorentzTransformerBlock(nn.Module):
-    def __init__(self, config, drop_path_rate: float = 0.0) -> None:
+    def __init__(self, config, stochastic_depth_rate: float = 0.0) -> None:
         super().__init__()
         self.manifold = config["manifold"]
         self.layernorm = config["layernorm"]
@@ -77,8 +77,7 @@ class LorentzTransformerBlock(nn.Module):
         init_delta = config["residual_delta_init"]
         self.delta = nn.Parameter(torch.tensor(float(init_delta)))
 
-        self.drop_path_att = DropPath(drop_path_rate)
-        self.drop_path_mlp = DropPath(drop_path_rate)
+        self.drop_path = DropPath(stochastic_depth_rate)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
@@ -86,13 +85,13 @@ class LorentzTransformerBlock(nn.Module):
         x_normed = self.batchnorm1(x) if self.layernorm else x
         att_out = self.manifold.geodesic_residual(residual, self.attention(x_normed), weight=torch.sigmoid(self.res_scale_att))
         att_out = self.manifold.gyro_scale(att_out, self.delta)
-        x = self.drop_path_att(att_out, residual)
+        x = self.drop_path(att_out, residual)
 
         residual = x
         x_normed = self.batchnorm2(x) if self.layernorm else x
         mlp_out = self.manifold.geodesic_residual(residual, self.mlp(x_normed), weight=torch.sigmoid(self.res_scale_mlp))
         mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
-        out = self.drop_path_mlp(mlp_out, residual)
+        out = self.drop_path(mlp_out, residual)
 
         return out
 
@@ -103,10 +102,9 @@ class LorentzEncoder(nn.Module):
         n = config["num_hidden_layers"]
         self.manifold = config["manifold"]
 
-        max_drop = config.get("stochastic_depth", 0.0)
-        drop_rates = [max_drop * i / (n - 1) for i in range(n)] if n > 1 else [0.0]
+        drop_rate = config.get("stochastic_depth_rate", 0.0)
         self.blocks = nn.ModuleList(
-            [LorentzTransformerBlock(config, drop_path_rate=r) for r in drop_rates]
+            [LorentzTransformerBlock(config, stochastic_depth_rate=drop_rate) for _ in range(n)]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

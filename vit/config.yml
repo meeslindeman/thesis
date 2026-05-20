@@ -1,0 +1,21 @@
+# Euclidean ViT
+# Architecture 
+hidden_size: 192
+num_hidden_layers: 12
+num_attention_heads: 3
+mlp_dim: 768
+patch_size: 4
+patch_embed_type: conv
+final_op: cls
+
+# Optimizer
+lr: 4.15e-3
+weight_decay: 0.06
+scheduler: warmup_cosine
+warmup_epochs: 10
+
+# Regularization 
+dropout_rate: 0.0
+attn_dropout_rate: 0.1
+stochastic_depth_rate: 0.1
+label_smoothing: 0.1
