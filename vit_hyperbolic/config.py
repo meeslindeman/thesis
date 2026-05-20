@@ -31,6 +31,6 @@ class Config(BaseConfig):
     compute_scores: str = "lorentz_inner"  # "lorentz_inner" | "signed_dist"
 
     # layer initialisation
-    reset_params: str = "lorentz_kaiming"
-    a_default: float = 0.1
+    reset_params: str = "xavier"
+    a_default: float = 0.05
     use_weight_norm: bool = False

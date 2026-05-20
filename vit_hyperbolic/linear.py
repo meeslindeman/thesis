@@ -53,7 +53,7 @@ class LorentzFullyConnected(nn.Module):
             in_features, out_features = self.v.shape
             nn.init.kaiming_normal_(self.v)
             self.g.data.fill_((1.0 / (in_features + out_features)) ** 0.5)
-            nn.init.uniform_(self.a, 0.0, a_default) if a_default > 0.0 else self.a.data.zero_()
+            self.a.data.fill_(a_default)
             return
 
         in_features, out_features = self.U.shape
@@ -82,7 +82,7 @@ class LorentzFullyConnected(nn.Module):
         else:
             raise KeyError(f"Unknown reset_params value: {reset_params}")
 
-        nn.init.uniform_(self.a, 0.0, a_default) if a_default > 0.0 else self.a.data.zero_()
+        self.a.data.fill_(a_default)
 
     def create_spacelike_vector(self):
         U = self.get_U()

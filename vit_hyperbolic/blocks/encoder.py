@@ -18,7 +18,7 @@ class LorentzMLP(nn.Module):
             manifold=config["manifold"],
             reset_params=config["reset_params"],
             a_default=config["a_default"],
-            activation=nn.functional.relu,
+            activation=nn.GELU(),
             use_weight_norm=config["use_weight_norm"]
         )
         self.fc2 = LorentzFullyConnected(
