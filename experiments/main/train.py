@@ -113,9 +113,10 @@ def main():
     set_seed(cfg.seed)
     run_start = time.perf_counter()
 
-    dataset, _ = get_dataset(cfg.dataset, data_dir="data/", validation_size=5000)
+    dataset, _ = get_dataset(cfg.dataset, data_dir="data/", validation_size=5000, augmentation=cfg.augmentation)
     dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
     trainloader = dataloaders["train"]
+    valloader = dataloaders["validation"]
     testloader = dataloaders["test"]
 
     device = torch.device(cfg.device)
@@ -134,7 +135,8 @@ def main():
     scheduler = build_scheduler(cfg, optimizer)
 
     start_epoch = 0
-    best_acc = 0.0
+    best_val_acc = 0.0
+    best_test_acc = 0.0
     epochs_no_improve = 0
 
     ckpt_path = None
@@ -144,29 +146,31 @@ def main():
     if args.resume is not None:
         state = load_checkpoint(args.resume, model, optimizer, scheduler, map_location=device)
         start_epoch = state.get("epoch", 0)
-        best_acc = state.get("acc", 0.0)
-        print(f"Resumed from epoch {start_epoch} (acc={best_acc:.4f})")
+        best_val_acc = state.get("val_acc", 0.0)
+        best_test_acc = state.get("test_acc", 0.0)
+        print(f"Resumed from epoch {start_epoch} (val_acc={best_val_acc:.4f}, test_acc={best_test_acc:.4f})")
 
     for epoch in range(start_epoch, cfg.epochs):
-        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip)
+        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip, mixing_aug=(cfg.augmentation == "advanced"))
         if scheduler is not None:
             scheduler.step()
-        acc, test_loss = evaluate(model, testloader, loss_fn, device)
+        val_acc, val_loss = evaluate(model, valloader, loss_fn, device)
 
         print(
             f"Epoch: {epoch + 1}, "
             f"Train loss: {train_loss:.4f}, "
             f"Train accuracy: {train_acc:.4f}, "
-            f"Test loss: {test_loss:.4f}, "
-            f"Test accuracy: {acc:.4f}"
+            f"Val loss: {val_loss:.4f}, "
+            f"Val accuracy: {val_acc:.4f}"
         )
 
-        if acc > best_acc:
-            best_acc = acc
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_test_acc, _ = evaluate(model, testloader, loss_fn, device)
             epochs_no_improve = 0
             if ckpt_path is not None:
-                save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, acc=acc, model_name=args.model)
-                print(f"Saved checkpoint: {ckpt_path}")
+                save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, val_acc=best_val_acc, test_acc=best_test_acc, model_name=args.model)
+                print(f"Saved checkpoint: {ckpt_path} (val={best_val_acc:.4f}, test={best_test_acc:.4f})")
         else:
             epochs_no_improve += 1
 
@@ -176,6 +180,7 @@ def main():
 
     total_time = time.perf_counter() - run_start
     print(f"Total training time: {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
+    print(f"Best validation accuracy: {best_val_acc:.4f} — Test accuracy at best val: {best_test_acc:.4f}")
 
 
 if __name__ == "__main__":

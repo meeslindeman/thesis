@@ -64,6 +64,7 @@ DATASET_REGISTRY = {
         "image_size": 32,
         "mean": (0.49139968, 0.48215841, 0.44653091),
         "std":  (0.24703223, 0.24348513, 0.26158784),
+        "aa_policy": transforms.AutoAugmentPolicy.CIFAR10,
     },
     "cifar100": {
         "cls": CIFAR100,
@@ -71,6 +72,7 @@ DATASET_REGISTRY = {
         "image_size": 32,
         "mean": (0.50707516, 0.48654887, 0.44091784),
         "std":  (0.26733429, 0.25643846, 0.27615047),
+        "aa_policy": transforms.AutoAugmentPolicy.CIFAR10,
     },
     "tiny_imagenet": {
         "cls": TinyImageNet,
@@ -78,6 +80,7 @@ DATASET_REGISTRY = {
         "image_size": 64,
         "mean": (0.4802, 0.4481, 0.3975),
         "std":  (0.2302, 0.2265, 0.2262),
+        "aa_policy": transforms.AutoAugmentPolicy.IMAGENET,
     },
 }
 
@@ -97,24 +100,31 @@ def numpy_collate_fn(batch):
     return imgs, labels
 
 
-def _build_transforms(meta, train: bool):
+def _build_transforms(meta, train: bool, augmentation: str = "simple"):
     size = meta["image_size"]
-    if train:
+    if not train:
+        return transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(meta["mean"], meta["std"]),
+        ])
+    if augmentation == "advanced":
         return transforms.Compose([
             transforms.RandomCrop(size, padding=size // 8),
             transforms.RandomHorizontalFlip(),
-            transforms.RandAugment(num_ops=2, magnitude=9),
+            transforms.AutoAugment(meta["aa_policy"]),
             transforms.ToTensor(),
             transforms.Normalize(meta["mean"], meta["std"]),
+            transforms.RandomErasing(p=0.25, scale=(0.02, 0.4), ratio=(0.3, 3.3), value=meta["mean"]),
         ])
-    else:
-        return transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(meta["mean"], meta["std"]),
-        ])
+    return transforms.Compose([
+        transforms.RandomCrop(size, padding=size // 8),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(meta["mean"], meta["std"]),
+    ])
 
 
-def get_dataset(name, data_dir="data/", validation_size=5000):
+def get_dataset(name, data_dir="data/", validation_size=5000, augmentation="simple"):
     name = name.lower()
     if name not in DATASET_REGISTRY:
         raise ValueError(f"Unknown dataset '{name}'. Available: {list(DATASET_REGISTRY)}")
@@ -122,7 +132,7 @@ def get_dataset(name, data_dir="data/", validation_size=5000):
     meta = DATASET_REGISTRY[name]
     cls = meta["cls"]
 
-    train_transform = _build_transforms(meta, train=True)
+    train_transform = _build_transforms(meta, train=True, augmentation=augmentation)
     test_transform = _build_transforms(meta, train=False)
 
     train_full = cls(root=data_dir, train=True, download=True, transform=train_transform)

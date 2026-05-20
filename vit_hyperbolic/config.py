@@ -7,7 +7,7 @@ class Config(BaseConfig):
     lr: float = 1e-4
     grad_clip: float = 0.0
     dropout_rate: float = 0.0
-    stochastic_depth: float = 0.0
+    stochastic_depth: float = 0.1
 
     # shared with euclidean but not in base (attention dropout, patch settings)
     attn_dropout_rate: float = 0.1

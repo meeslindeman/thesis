@@ -140,8 +140,31 @@ def cfg_from_args(args: argparse.Namespace, Config):
     return cfg
 
 
+# Mixing augmentations (applied on-the-fly during training)
+def _mixup_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 1.0):
+    lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    idx = torch.randperm(images.size(0), device=images.device)
+    mixed = lam * images + (1 - lam) * images[idx]
+    return mixed, labels, labels[idx], lam
+
+
+def _cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 1.0):
+    B, _, H, W = images.shape
+    lam = torch.distributions.Beta(alpha, alpha).sample().item()
+    idx = torch.randperm(B, device=images.device)
+    cut_h = int(H * (1 - lam) ** 0.5)
+    cut_w = int(W * (1 - lam) ** 0.5)
+    cx, cy = torch.randint(W, (1,)).item(), torch.randint(H, (1,)).item()
+    x1, x2 = max(cx - cut_w // 2, 0), min(cx + cut_w // 2, W)
+    y1, y2 = max(cy - cut_h // 2, 0), min(cy + cut_h // 2, H)
+    mixed = images.clone()
+    mixed[:, :, y1:y2, x1:x2] = images[idx, :, y1:y2, x1:x2]
+    lam = 1.0 - (x2 - x1) * (y2 - y1) / (H * W)
+    return mixed, labels, labels[idx], lam
+
+
 # Training / evaluation loops
-def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: float = 0.0) -> tuple[float, float]:
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: float = 0.0, mixing_aug: bool = False) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
     correct = 0
@@ -149,14 +172,23 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: f
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
         optimizer.zero_grad(set_to_none=True)
-        logits = model(images)
-        loss = loss_fn(logits, labels)
+        if mixing_aug and random.random() < 0.5:
+            if random.random() < 0.5:
+                images, y_a, y_b, lam = _mixup_batch(images, labels, alpha=0.8)
+            else:
+                images, y_a, y_b, lam = _cutmix_batch(images, labels, alpha=1.0)
+            logits = model(images)
+            loss = lam * loss_fn(logits, y_a) + (1 - lam) * loss_fn(logits, y_b)
+            correct += (logits.detach().argmax(dim=1) == y_a).sum().item()
+        else:
+            logits = model(images)
+            loss = loss_fn(logits, labels)
+            correct += (logits.detach().argmax(dim=1) == labels).sum().item()
         loss.backward()
         if grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
         total_loss += loss.item() * images.size(0)
-        correct += (logits.detach().argmax(dim=1) == labels).sum().item()
     n = len(trainloader.dataset)
     return total_loss / n, correct / n
 

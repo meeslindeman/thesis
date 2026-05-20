@@ -15,10 +15,10 @@ DATASET_CONFIGS = {
 @dataclass
 class BaseConfig:
     # training
-    batch_size: int = 256
+    batch_size: int = 128
     epochs: int = 30
-    lr: float = 1.9e-4 # default for 256 batch size; scale linearly with batch size
-    weight_decay: float = 0.3
+    lr: float = 4.15e-3
+    weight_decay: float = 6e-2
     device: str = "auto"
     seed: int = 0
 
@@ -27,6 +27,9 @@ class BaseConfig:
     image_size: int = field(init=False)
     num_classes: int = field(init=False)
     num_channels: int = field(init=False)
+
+    # augmentation pipeline ("simple" | "advanced")
+    augmentation: str = "simple"
 
     # early stopping (0 = disabled)
     patience: int = 0

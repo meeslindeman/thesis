@@ -3,6 +3,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class DropPath(nn.Module):
+    """Drop entire residual paths per sample (stochastic depth)."""
+    def __init__(self, drop_prob: float = 0.0):
+        super().__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.drop_prob == 0.0 or not self.training:
+            return x
+        keep_prob = 1.0 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        mask = torch.rand(shape, dtype=x.dtype, device=x.device).add_(keep_prob).floor_().div_(keep_prob)
+        return x * mask
+
+
 class PatchEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -105,10 +120,12 @@ class TransformerBlock(nn.Module):
         self.mlp = MLP(config)
         self.norm1 = nn.LayerNorm(config["hidden_size"])
         self.norm2 = nn.LayerNorm(config["hidden_size"])
+        rate = config.get("stochastic_depth_rate", 0.0)
+        self.drop_path = DropPath(rate) if rate > 0.0 else nn.Identity()
 
     def forward(self, x):
-        x = x + self.attention(self.norm1(x))
-        x = x + self.mlp(self.norm2(x))
+        x = x + self.drop_path(self.attention(self.norm1(x)))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
 
