@@ -33,7 +33,7 @@ def build_model(model: str, cfg):
         return LorentzViT(model_cfg)
 
     elif model == "hypercore":
-        from vit_hypercore.LViT import LViT
+        from vit_hypercore.model import LViT
         from vit_hypercore.manifold.lorentz import Lorentz
         manifold = Lorentz(cfg.curvature)
         return LViT(

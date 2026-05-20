@@ -17,9 +17,9 @@ DATASET_CONFIGS = {
 class Config:
     # Shared: training
     batch_size: int = 128
-    epochs: int = 200
-    lr: float = 4.15e-3
-    weight_decay: float = 6e-2
+    epochs: int = 300
+    lr: float = 1.0e-3
+    weight_decay: float = 0.1
     device: str = "auto"
     seed: int = 0
     patience: int = 0  # early stopping (0 = disabled)

@@ -64,7 +64,6 @@ DATASET_REGISTRY = {
         "image_size": 32,
         "mean": (0.49139968, 0.48215841, 0.44653091),
         "std":  (0.24703223, 0.24348513, 0.26158784),
-        "aa_policy": transforms.AutoAugmentPolicy.CIFAR10,
     },
     "cifar100": {
         "cls": CIFAR100,
@@ -72,7 +71,6 @@ DATASET_REGISTRY = {
         "image_size": 32,
         "mean": (0.50707516, 0.48654887, 0.44091784),
         "std":  (0.26733429, 0.25643846, 0.27615047),
-        "aa_policy": transforms.AutoAugmentPolicy.CIFAR10,
     },
     "tiny_imagenet": {
         "cls": TinyImageNet,
@@ -80,7 +78,6 @@ DATASET_REGISTRY = {
         "image_size": 64,
         "mean": (0.4802, 0.4481, 0.3975),
         "std":  (0.2302, 0.2265, 0.2262),
-        "aa_policy": transforms.AutoAugmentPolicy.IMAGENET,
     },
 }
 
@@ -111,7 +108,7 @@ def _build_transforms(meta, train: bool, augmentation: str = "simple"):
         return transforms.Compose([
             transforms.RandomCrop(size, padding=size // 8),
             transforms.RandomHorizontalFlip(),
-            transforms.AutoAugment(meta["aa_policy"]),
+            transforms.RandAugment(num_ops=2, magnitude=9),
             transforms.ToTensor(),
             transforms.Normalize(meta["mean"], meta["std"]),
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.4), ratio=(0.3, 3.3), value=meta["mean"]),
