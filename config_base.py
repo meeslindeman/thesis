@@ -46,15 +46,15 @@ class Config:
     num_hidden_layers: int = 12
     num_attention_heads: int = 3
     mlp_dim: int = 768
+    patch_embed_type: str = "linear"  # linear or conv
+    final_op: str = "pooling"  # pooling or cls
     dropout_rate: float = 0.0
     stochastic_depth_rate: float = 0.1
     attn_dropout_rate: float = 0.1
 
     # Euclidean ViT
     qkv_bias: bool = True
-    initializer_range: float = 0.02
-    patch_embed_type: str = "conv"  # linear or conv
-    final_op: str = "cls"  # pooling or cls
+    initializer_range: float = 0.02    
 
     # Hyperbolic
     curvature: float = 1.0
