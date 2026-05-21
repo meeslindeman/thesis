@@ -73,8 +73,6 @@ class Config:
     hyp_lr: float = 3e-4
     hyp_weight_decay: float = 1e-4
     stabilize: int = 1
-    hidden_channel: int = field(init=False)  # hidden_size // num_attention_heads
-    mlp_hidden_size: int = field(init=False)  # mlp_dim // num_attention_heads
 
     def __post_init__(self):
         if self.dataset not in DATASET_CONFIGS:
@@ -83,8 +81,6 @@ class Config:
             )
         for k, v in DATASET_CONFIGS[self.dataset].items():
             setattr(self, k, v)
-        self.hidden_channel = self.hidden_size // self.num_attention_heads
-        self.mlp_hidden_size = self.mlp_dim // self.num_attention_heads
 
 
 # Alias so existing code (idmm, adversarial) that imports BaseConfig keeps working
