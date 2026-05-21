@@ -25,7 +25,7 @@ curvature: 1.0
 residual_weight_init: 0.0
 residual_delta_init: 2.0
 concat_mode: direct
-compute_scores: lorentz_inner
+compute_scores: signed_dist
 reset_params: xavier
 a_default: 0.05
 use_weight_norm: false
