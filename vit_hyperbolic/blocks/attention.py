@@ -199,10 +199,10 @@ class LorentzMHA(nn.Module):
         # Attention scores ([B, H, N, N])
         # Scale uses spatial head dim
         if self.compute_scores == "lorentz_inner":
-            scores = self._lorentz_inner(q, k) * self.scale 
+            scores = self._lorentz_inner(q, k) * self.scale
         elif self.compute_scores == "signed_dist":
-            d2 = self._lorentz_sqdist(q, k)             
-            scores = -d2 * self.scale                   
+            d2 = self._lorentz_sqdist(q, k)
+            scores = -d2 * self.scale
         else:
             raise ValueError(f"Unknown compute_scores mode: {self.compute_scores}")
         
