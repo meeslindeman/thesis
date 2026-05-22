@@ -114,14 +114,13 @@ class MLP(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, stochastic_depth_rate: float = 0.0):
         super().__init__()
         self.attention = MultiHeadAttention(config)
         self.mlp = MLP(config)
         self.norm1 = nn.LayerNorm(config["hidden_size"])
         self.norm2 = nn.LayerNorm(config["hidden_size"])
-        rate = config.get("stochastic_depth_rate", 0.0)
-        self.drop_path = DropPath(rate) if rate > 0.0 else nn.Identity()
+        self.drop_path = DropPath(stochastic_depth_rate) if stochastic_depth_rate > 0.0 else nn.Identity()
 
     def forward(self, x):
         x = x + self.drop_path(self.attention(self.norm1(x)))
@@ -133,7 +132,11 @@ class Encoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         n = config["num_hidden_layers"]
-        self.blocks = nn.ModuleList([TransformerBlock(config) for _ in range(n)])
+        base_rate = config.get("stochastic_depth_rate", 0.0)
+        self.blocks = nn.ModuleList([
+            TransformerBlock(config, stochastic_depth_rate=base_rate * (i + 1) / n)
+            for i in range(n)
+        ])
         self.norm = nn.LayerNorm(config["hidden_size"])
 
     def forward(self, x):

@@ -102,10 +102,11 @@ class LorentzEncoder(nn.Module):
         n = config["num_hidden_layers"]
         self.manifold = config["manifold"]
 
-        drop_rate = config.get("stochastic_depth_rate", 0.0)
-        self.blocks = nn.ModuleList(
-            [LorentzTransformerBlock(config, stochastic_depth_rate=drop_rate) for _ in range(n)]
-        )
+        base_rate = config.get("stochastic_depth_rate", 0.0)
+        self.blocks = nn.ModuleList([
+            LorentzTransformerBlock(config, stochastic_depth_rate=base_rate * (i + 1) / n)
+            for i in range(n)
+        ])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for block in self.blocks:

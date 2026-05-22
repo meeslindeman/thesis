@@ -114,8 +114,9 @@ def _build_transforms(meta, train: bool, augmentation: str = "simple"):
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.4), ratio=(0.3, 3.3), value=meta["mean"]),
         ])
     return transforms.Compose([
-        transforms.RandomCrop(size, padding=size // 8),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomCrop(size, padding=4),
+        transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
         transforms.ToTensor(),
         transforms.Normalize(meta["mean"], meta["std"]),
     ])
