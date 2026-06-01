@@ -68,6 +68,7 @@ class Config:
     reset_params: str = "xavier"
     a_default: float = 0.05
     use_weight_norm: bool = False
+    lambda_margin: float = 0.0  # margin push on classifier a: -lambda * mean(a_cls)
 
     # HyperCore
     hyp_lr: float = 3e-4

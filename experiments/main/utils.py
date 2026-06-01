@@ -180,7 +180,7 @@ def _cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 1.0
 
 
 # Training / evaluation loops
-def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: float = 0.0, mixing_aug: bool = False) -> tuple[float, float]:
+def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: float = 0.0, mixing_aug: bool = False, lambda_margin: float = 0.0) -> tuple[float, float]:
     model.train()
     total_loss = 0.0
     correct = 0
@@ -200,6 +200,8 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: f
             logits = model(images)
             loss = loss_fn(logits, labels)
             correct += (logits.detach().argmax(dim=1) == labels).sum().item()
+        if lambda_margin > 0.0 and hasattr(model, 'classifier') and hasattr(model.classifier, 'a'):
+            loss = loss - lambda_margin * model.classifier.a.mean()
         loss.backward()
         if grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)

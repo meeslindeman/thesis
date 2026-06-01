@@ -20,15 +20,15 @@ dropout_rate: 0.0
 attn_dropout_rate: 0.1
 stochastic_depth_rate: 0.1
 label_smoothing: 0.1
+lambda_margin: 10.0
 layernorm: true
 
-# Hyperbolic 
+# Hyperbolic
 curvature: 1.0
-residual_weight_init: 0.0
-residual_delta_init: 2.0
+residual_weight_init: -1.0
+residual_delta_init: 1.0
 concat_mode: direct
-compute_scores: signed_dist
+compute_scores: lorentz_inner
 reset_params: xavier
 a_default: 0.05
 use_weight_norm: false
-

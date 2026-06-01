@@ -52,20 +52,26 @@ def build_model(model: str, cfg):
         )
 
 
-def _hyperbolic_param_groups(model, lr, weight_decay):
-    decay, no_decay = [], []
+def _hyperbolic_param_groups(model, lr, weight_decay, lambda_margin: float = 0.0):
+    decay, no_decay, cls_a = [], [], []
+    cls_a_ids = set()
+    if lambda_margin > 0.0 and hasattr(model, 'classifier') and hasattr(model.classifier, 'a'):
+        cls_a.append(model.classifier.a)
+        cls_a_ids.add(id(model.classifier.a))
     for name, param in model.named_parameters():
-        if not param.requires_grad:
+        if not param.requires_grad or id(param) in cls_a_ids:
             continue
         if name.endswith(('.U', '.v')):
             decay.append(param)
         else:
             no_decay.append(param)
-    return optim.AdamW(
-        [{'params': decay, 'weight_decay': weight_decay},
-         {'params': no_decay, 'weight_decay': 0.0}],
-        lr=lr,
-    )
+    groups = [
+        {'params': decay,    'weight_decay': weight_decay},
+        {'params': no_decay, 'weight_decay': 0.0},
+    ]
+    if cls_a:
+        groups.append({'params': cls_a, 'weight_decay': 0.0})
+    return optim.AdamW(groups, lr=lr)
 
 
 def build_optimizer(model_name: str, model, cfg):
@@ -76,7 +82,7 @@ def build_optimizer(model_name: str, model, cfg):
         if cfg.optimizer == "riemannian":
             from geoopt.optim import RiemannianAdam
             return RiemannianAdam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
-        return _hyperbolic_param_groups(model, cfg.lr, cfg.weight_decay)
+        return _hyperbolic_param_groups(model, cfg.lr, cfg.weight_decay, lambda_margin=cfg.lambda_margin)
 
     if model_name == "hypercore":
         from vit_hypercore.optimizer import build_optimizer as _build
@@ -146,8 +152,10 @@ def main():
         best_test_acc = state.get("test_acc", 0.0)
         print(f"Resumed from epoch {start_epoch} (val_acc={best_val_acc:.4f}, test_acc={best_test_acc:.4f})")
 
+    lambda_margin = cfg.lambda_margin if args.model == "hyperbolic" else 0.0
+
     for epoch in range(start_epoch, cfg.epochs):
-        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip, mixing_aug=(cfg.augmentation == "advanced"))
+        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip, mixing_aug=(cfg.augmentation == "advanced"), lambda_margin=lambda_margin)
         if scheduler is not None:
             scheduler.step()
         val_acc, val_loss = evaluate(model, valloader, loss_fn, device)
@@ -159,6 +167,10 @@ def main():
             f"Val loss: {val_loss:.4f}, "
             f"Val accuracy: {val_acc:.4f}"
         )
+
+        if args.model == "hyperbolic" and hasattr(model, 'classifier') and hasattr(model.classifier, 'a'):
+            a = model.classifier.a.detach()
+            print(f"  a_cls: mean={a.mean():+.4f}  std={a.std():.4f}  min={a.min():+.4f}  max={a.max():+.4f}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
