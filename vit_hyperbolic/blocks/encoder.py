@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from vit_hyperbolic.blocks.attention import LorentzMHA
 from vit_hyperbolic.blocks.batchnorm import LorentzBatchNorm1d
@@ -84,13 +85,15 @@ class LorentzTransformerBlock(nn.Module):
 
         x_normed = self.batchnorm1(x) if self.layernorm else x
         att_out = self.manifold.geodesic_residual(residual, self.attention(x_normed), weight=torch.sigmoid(self.res_scale_att))
-        att_out = self.manifold.gyro_scale(att_out, self.delta)
+        # att_out = self.manifold.gyro_scale(att_out, self.delta)
+        att_out = self.manifold.gyro_mul(F.softplus(self.delta), att_out)
         x = self.drop_path(att_out, residual)
 
         residual = x
         x_normed = self.batchnorm2(x) if self.layernorm else x
         mlp_out = self.manifold.geodesic_residual(residual, self.mlp(x_normed), weight=torch.sigmoid(self.res_scale_mlp))
-        mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
+        # mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
+        mlp_out = self.manifold.gyro_mul(F.softplus(self.delta), mlp_out)
         out = self.drop_path(mlp_out, residual)
 
         return out

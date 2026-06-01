@@ -109,3 +109,44 @@ class LorentzFullyConnected(nn.Module):
 
     def mlr(self, x):
         return self.signed_dist2hyperplanes_scaled_angle(x)
+
+
+class LorentzMLR(nn.Module):
+    """ Multinomial logistic regression (MLR) in the Lorentz model."""
+    def __init__(
+            self, 
+            manifold: Lorentz, 
+            num_features: int, 
+            num_classes: int
+        ):
+        super(LorentzMLR, self).__init__()
+
+        self.manifold = manifold
+
+        self.a = torch.nn.Parameter(torch.zeros(num_classes + 1,))
+        self.z = torch.nn.Parameter(F.pad(torch.zeros(num_classes + 1, num_features-2), pad=(1,0), value=1)) # z should not be (0,0)
+
+        self.init_weights()
+
+    def forward(self, x):
+        # Hyperplane
+        sqrt_mK = 1/self.manifold.k().sqrt()
+        norm_z = torch.norm(self.z, dim=-1)
+        w_t = (torch.sinh(sqrt_mK*self.a)*norm_z)
+        w_s = torch.cosh(sqrt_mK*self.a.view(-1,1))*self.z
+        # Clamp sqrt argument to prevent NaN from numerical errors
+        # Mathematically this equals ||z||^2 (since cosh^2 - sinh^2 = 1)
+        beta_sq = -w_t**2 + torch.norm(w_s, dim=-1)**2
+        beta = torch.sqrt(beta_sq.clamp(min=1e-10))
+        alpha = -w_t*x.narrow(-1, 0, 1) + (torch.cosh(sqrt_mK*self.a)*torch.inner(x.narrow(-1, 1, x.shape[-1]-1), self.z))
+
+        # Clamp beta to prevent division by zero
+        d = self.manifold.k().sqrt()*torch.abs(torch.asinh(sqrt_mK*alpha/beta.clamp(min=1e-6)))  # Distance to hyperplane
+        logits = torch.sign(alpha)*beta*d
+
+        return logits
+        
+    def init_weights(self):
+        stdv = 1. / math.sqrt(self.z.size(1))
+        nn.init.uniform_(self.z, -stdv, stdv)
+        nn.init.uniform_(self.a, -stdv, stdv)

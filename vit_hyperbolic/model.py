@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from vit_hyperbolic.blocks.embeddings import LorentzEmbeddings
 from vit_hyperbolic.blocks.encoder import LorentzEncoder
-from vit_hyperbolic.linear import LorentzFullyConnected
+from vit_hyperbolic.linear import LorentzFullyConnected, LorentzMLR
 
 
 class LorentzViT(nn.Module):
@@ -16,13 +16,18 @@ class LorentzViT(nn.Module):
 
         self.embedding = LorentzEmbeddings(config)
 
-        self.classifier = LorentzFullyConnected(
-            in_features=config["hidden_size"] + 1,
-            out_features=config["num_classes"] + 1,
+        # self.classifier = LorentzFullyConnected(
+        #     in_features=config["hidden_size"] + 1,
+        #     out_features=config["num_classes"] + 1,
+        #     manifold=config["manifold"],
+        #     reset_params=config["reset_params"],
+        #     a_default=config["a_default"],
+        #     do_mlr=True
+        # )
+        self.classifier = LorentzMLR(
             manifold=config["manifold"],
-            reset_params=config["reset_params"],
-            a_default=config["a_default"],
-            do_mlr=True
+            num_features=config["hidden_size"] + 1,
+            num_classes=config["num_classes"]
         )
 
     def pool_tokens(self, x: torch.Tensor) -> torch.Tensor:
