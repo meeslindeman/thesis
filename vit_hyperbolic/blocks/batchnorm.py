@@ -5,14 +5,6 @@ import torch.nn as nn
 class LorentzBatchNorm(nn.Module):
     """
     Lorentz Batch Normalization following Bdeir et al.
-
-    Normalization happens in tangent space at the batch centroid:
-    1. Compute batch centroid via lorentz_midpoint (Fréchet mean approximation)
-    2. Log-map all points to tangent space at the centroid
-    3. Parallel-transport tangent vectors to the origin
-    4. Scale by gamma (/ std if normalize_variance=True)
-    5. Parallel-transport to learned center beta
-    6. Exp-map back to the manifold
     """
 
     def __init__(

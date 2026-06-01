@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from vit_hyperbolic.blocks.attention import LorentzMHA
 from vit_hyperbolic.blocks.batchnorm import LorentzBatchNorm1d
+from vit_hyperbolic.blocks.batchnorm_gyro import GyroLorentzBatchNorm1d
 from vit_hyperbolic.blocks.dropout import DropPath
 from vit_hyperbolic.linear import LorentzFullyConnected
 
@@ -58,12 +58,12 @@ class LorentzTransformerBlock(nn.Module):
         )
         self.mlp = LorentzMLP(config)
 
-        self.batchnorm1 = LorentzBatchNorm1d(
+        self.batchnorm1 = GyroLorentzBatchNorm1d(
             num_features=config["hidden_size"] + 1,
             manifold=config["manifold"],
             normalize_variance=False,
         )
-        self.batchnorm2 = LorentzBatchNorm1d(
+        self.batchnorm2 = GyroLorentzBatchNorm1d(
             num_features=config["hidden_size"] + 1,
             manifold=config["manifold"],
             normalize_variance=False,
@@ -85,15 +85,13 @@ class LorentzTransformerBlock(nn.Module):
 
         x_normed = self.batchnorm1(x) if self.layernorm else x
         att_out = self.manifold.geodesic_residual(residual, self.attention(x_normed), weight=torch.sigmoid(self.res_scale_att))
-        # att_out = self.manifold.gyro_scale(att_out, self.delta)
-        att_out = self.manifold.gyro_mul(F.softplus(self.delta), att_out)
+        att_out = self.manifold.gyro_scale(att_out, self.delta)
         x = self.drop_path(att_out, residual)
 
         residual = x
         x_normed = self.batchnorm2(x) if self.layernorm else x
         mlp_out = self.manifold.geodesic_residual(residual, self.mlp(x_normed), weight=torch.sigmoid(self.res_scale_mlp))
-        # mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
-        mlp_out = self.manifold.gyro_mul(F.softplus(self.delta), mlp_out)
+        mlp_out = self.manifold.gyro_scale(mlp_out, self.delta)
         out = self.drop_path(mlp_out, residual)
 
         return out
