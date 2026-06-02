@@ -90,13 +90,14 @@ class MultiHeadAttention(nn.Module):
         self.qkv = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=config["qkv_bias"])
         self.out_proj = nn.Linear(self.hidden_size, self.hidden_size)
         self.proj_dropout = nn.Dropout(config["dropout_rate"])
+        self.temperature = nn.Parameter(torch.ones(1))
 
     def forward(self, x):
         B, N, _ = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_size).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
         dropout_p = self.attn_dropout if self.training else 0.0
-        out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        out = F.scaled_dot_product_attention(q / self.temperature, k, v, dropout_p=dropout_p)
         out = out.transpose(1, 2).reshape(B, N, self.hidden_size)
         return self.proj_dropout(self.out_proj(out))
 
@@ -170,15 +171,14 @@ class ViT(nn.Module):
         return self.classifier(self.encode(x))
 
     def _init_weights(self):
-        std = self.config["initializer_range"]
         for m in self.modules():
             if isinstance(m, (nn.Linear, nn.Conv2d)):
-                nn.init.trunc_normal_(m.weight, std=std)
+                nn.init.xavier_normal_(m.weight)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.LayerNorm):
                 nn.init.zeros_(m.bias)
                 nn.init.ones_(m.weight)
         if self.embedding.cls_token is not None:
-            nn.init.trunc_normal_(self.embedding.cls_token, std=std)
-        nn.init.trunc_normal_(self.embedding.position_embeddings, std=std)
+            nn.init.normal_(self.embedding.cls_token)
+        nn.init.normal_(self.embedding.position_embeddings)

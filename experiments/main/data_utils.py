@@ -105,10 +105,14 @@ def _build_transforms(meta, train: bool, augmentation: str = "simple"):
             transforms.Normalize(meta["mean"], meta["std"]),
         ])
     if augmentation == "advanced":
+        if size == 32:
+            auto_aug = transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10)
+        else:
+            auto_aug = transforms.RandAugment(num_ops=2, magnitude=9)
         return transforms.Compose([
-            transforms.RandomCrop(size, padding=size // 8),
             transforms.RandomHorizontalFlip(),
-            transforms.RandAugment(num_ops=2, magnitude=9),
+            transforms.RandomCrop(size, padding=size // 8),
+            auto_aug,
             transforms.ToTensor(),
             transforms.Normalize(meta["mean"], meta["std"]),
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.4), ratio=(0.3, 3.3), value=meta["mean"]),

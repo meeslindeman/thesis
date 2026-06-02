@@ -1,5 +1,5 @@
 # Euclidean ViT --- Parameters adapted from Hexformer
-# Architecture 
+# Architecture
 hidden_size: 768
 num_hidden_layers: 12
 num_attention_heads: 12
@@ -9,12 +9,12 @@ patch_embed_type: linear
 final_op: cls
 
 # Optimizer
-lr: 3e-3
-weight_decay: 1e-1
-scheduler: warmup_cosine
-warmup_epochs: 10
+lr: 4.15e-3
+weight_decay: 6e-2
+scheduler: cosine
+warmup_epochs: 0
 
-# Regularization 
+# Regularization
 dropout_rate: 0.0
 attn_dropout_rate: 0.0
 stochastic_depth_rate: 0.1
