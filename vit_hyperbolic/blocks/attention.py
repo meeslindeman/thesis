@@ -92,6 +92,7 @@ class LorentzMHA(nn.Module):
         ])
 
         self.dropout = nn.Dropout(attn_dropout_rate)
+        self.temperature = nn.Parameter(torch.ones(1))
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:
@@ -229,7 +230,7 @@ class LorentzMHA(nn.Module):
             scores = scores.masked_fill(~m, -1e9)
 
         # Softmax weights [B, H, N, N]
-        attn = F.softmax(scores, dim=-1)  
+        attn = F.softmax(scores / self.temperature.clamp(min=1e-4), dim=-1)  
         attn = self.dropout(attn)
 
         # Lorentz-valued aggregation (per head)

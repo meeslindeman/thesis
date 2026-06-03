@@ -9,7 +9,7 @@ patch_embed_type: linear
 final_op: pooling
 
 # Optimizer 
-lr: 1e-4
+lr: 1e-3 # tiny
 weight_decay: 0.05
 optimizer: adamw
 scheduler: warmup_cosine
@@ -20,7 +20,7 @@ dropout_rate: 0.0
 attn_dropout_rate: 0.1
 stochastic_depth_rate: 0.0
 label_smoothing: 0.1
-lambda_margin: 1.0
+lambda_margin: 0.0
 layernorm: true
 
 # Hyperbolic

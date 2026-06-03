@@ -9,7 +9,7 @@ patch_embed_type: linear
 final_op: cls
 
 # Optimizer
-lr: 4e-3
+lr: 1e-3
 weight_decay: 0.05
 scheduler: warmup_cosine
 warmup_epochs: 5
