@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from dataclasses import asdict
+from datetime import datetime
 
 from pathlib import Path
 
@@ -142,8 +143,9 @@ def main():
     epochs_no_improve = 0
 
     ckpt_path = None
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.checkpoint_dir is not None:
-        ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}.pt"
+        ckpt_path = Path(args.checkpoint_dir) / f"{args.model}_{cfg.dataset}_{stamp}.pt"
 
     if args.resume is not None:
         state = load_checkpoint(args.resume, model, optimizer, scheduler, map_location=device)

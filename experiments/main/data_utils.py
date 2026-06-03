@@ -119,7 +119,7 @@ def _build_transforms(meta, train: bool, augmentation: str = "simple"):
         ])
     return transforms.Compose([
         transforms.RandomHorizontalFlip(),
-        transforms.RandomCrop(size, padding=4),
+        transforms.RandomCrop(size, padding=size // 8),
         transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
         transforms.ToTensor(),
         transforms.Normalize(meta["mean"], meta["std"]),
