@@ -20,7 +20,7 @@ dropout_rate: 0.0
 attn_dropout_rate: 0.1
 stochastic_depth_rate: 0.0
 label_smoothing: 0.1
-lambda_margin: 0.0
+lambda_margin: 1.0
 layernorm: true
 
 # Hyperbolic
