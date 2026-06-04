@@ -157,7 +157,11 @@ def main():
     lambda_margin = cfg.lambda_margin if args.model == "hyperbolic" else 0.0
 
     for epoch in range(start_epoch, cfg.epochs):
-        train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip, mixing_aug=(cfg.augmentation == "advanced"), lambda_margin=lambda_margin)
+        try:
+            train_loss, train_acc = train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip=cfg.grad_clip, mixing_aug=(cfg.augmentation == "advanced"), lambda_margin=lambda_margin)
+        except RuntimeError as e:
+            print(f"Stopping training at epoch {epoch + 1}: {e}")
+            break
         if scheduler is not None:
             scheduler.step()
         val_acc, val_loss = evaluate(model, valloader, loss_fn, device)

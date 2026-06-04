@@ -202,6 +202,8 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: f
             correct += (logits.detach().argmax(dim=1) == labels).sum().item()
         if lambda_margin > 0.0 and hasattr(model, 'classifier') and hasattr(model.classifier, 'a'):
             loss = loss - lambda_margin * model.classifier.a.mean()
+        if not torch.isfinite(loss):
+            raise RuntimeError(f"NaN/Inf loss detected (loss={loss.item():.4f})")
         loss.backward()
         if grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
