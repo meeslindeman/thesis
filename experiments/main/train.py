@@ -117,7 +117,7 @@ def main():
     run_start = time.perf_counter()
 
     dataset, _ = get_dataset(cfg.dataset, data_dir="data/", validation_size=5000, augmentation=cfg.augmentation)
-    dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True)
+    dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=True, augmentation=cfg.augmentation)
     trainloader = dataloaders["train"]
     valloader = dataloaders["validation"]
     testloader = dataloaders["test"]

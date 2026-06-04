@@ -82,12 +82,47 @@ DATASET_REGISTRY = {
 }
 
 
-def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False, return_numpy=False):
+class RASampler(torch.utils.data.Sampler):
+    """HexFormer-style sampler: draws len_factor * dataset_len samples per epoch,
+    giving 3x more gradient updates. With len_factor=3 and 100 epochs this is
+    equivalent to 300 effective epochs of standard training."""
+
+    def __init__(self, dataset_len, batch_size, len_factor=3.0, shuffle=True, drop_last=True):
+        self.dataset_len = dataset_len
+        self.batch_size = batch_size
+        self.len_images = int(dataset_len * len_factor)
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+
+    def __iter__(self):
+        indices = np.random.permutation(self.dataset_len) if self.shuffle else np.arange(self.dataset_len)
+        repeated = np.resize(indices, self.len_images)
+        batch = []
+        for idx in repeated:
+            batch.append(int(idx))
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+        if batch and not self.drop_last:
+            yield batch
+
+    def __len__(self):
+        if self.drop_last:
+            return self.len_images // self.batch_size
+        return (self.len_images + self.batch_size - 1) // self.batch_size
+
+
+def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False, return_numpy=False, augmentation="simple"):
     collate_fn = numpy_collate_fn if return_numpy else None
+    if augmentation == "advanced":
+        train_sampler = RASampler(len(dataset["train"]), batch_size, len_factor=3.0, shuffle=shuffle, drop_last=drop_last)
+        train_loader = DataLoader(dataset["train"], batch_sampler=train_sampler, collate_fn=collate_fn, num_workers=8, pin_memory=True)
+    else:
+        train_loader = DataLoader(dataset["train"], batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, collate_fn=collate_fn, num_workers=8, pin_memory=True)
     return {
-        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle,  drop_last=drop_last, collate_fn=collate_fn, num_workers=8, pin_memory=True),
-        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False,    drop_last=False,     collate_fn=collate_fn, num_workers=4, pin_memory=True),
-        "test":       DataLoader(dataset["test"],       batch_size=512,        shuffle=False,    drop_last=False,     collate_fn=collate_fn, num_workers=4, pin_memory=True),
+        "train":      train_loader,
+        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False, drop_last=False, collate_fn=collate_fn, num_workers=4, pin_memory=True),
+        "test":       DataLoader(dataset["test"],       batch_size=512,        shuffle=False, drop_last=False, collate_fn=collate_fn, num_workers=4, pin_memory=True),
     }
 
 
