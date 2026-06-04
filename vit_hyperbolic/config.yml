@@ -9,16 +9,16 @@ patch_embed_type: linear
 final_op: pooling
 
 # Optimizer 
-lr: 1e-3 # tiny
-weight_decay: 0.05
+lr: 1e-4
+weight_decay: 1e-1
 optimizer: adamw
 scheduler: warmup_cosine
-warmup_epochs: 5
+warmup_epochs: 10
 
 # Regularization
 dropout_rate: 0.0
 attn_dropout_rate: 0.1
-stochastic_depth_rate: 0.0
+stochastic_depth_rate: 0.1
 label_smoothing: 0.1
 lambda_margin: 0.0
 layernorm: true

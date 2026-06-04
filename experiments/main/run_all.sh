@@ -4,7 +4,7 @@
 #SBATCH --job-name=run_all
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=144:00:00
+#SBATCH --time=5-00:00:00
 #SBATCH --array=0-8
 #SBATCH --output=/dev/null
 

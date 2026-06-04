@@ -9,10 +9,10 @@ patch_embed_type: linear
 final_op: cls
 
 # Optimizer
-lr: 1e-3
-weight_decay: 0.05
+lr: 3e-3 #tiny: 1e-3
+weight_decay: 1e-1
 scheduler: warmup_cosine
-warmup_epochs: 5
+warmup_epochs: 10
 
 # Regularization
 dropout_rate: 0.0
