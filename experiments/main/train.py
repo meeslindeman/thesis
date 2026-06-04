@@ -71,7 +71,7 @@ def _hyperbolic_param_groups(model, lr, weight_decay, lambda_margin: float = 0.0
         {'params': no_decay, 'weight_decay': 0.0},
     ]
     if cls_a:
-        groups.append({'params': cls_a, 'weight_decay': 0.0})
+        groups.append({'params': cls_a, 'weight_decay': weight_decay})
     return optim.AdamW(groups, lr=lr)
 
 
@@ -179,7 +179,7 @@ def main():
             best_test_acc, _ = evaluate(model, testloader, loss_fn, device)
             epochs_no_improve = 0
             if ckpt_path is not None:
-                save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, val_acc=best_val_acc, test_acc=best_test_acc, model_name=args.model)
+                save_checkpoint(ckpt_path, model, optimizer, scheduler, epoch=epoch + 1, val_acc=best_val_acc, test_acc=best_test_acc, model_name=args.model, config=asdict(cfg))
                 print(f"Saved checkpoint: {ckpt_path} (val={best_val_acc:.4f}, test={best_test_acc:.4f})")
         else:
             epochs_no_improve += 1
