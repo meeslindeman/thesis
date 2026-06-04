@@ -26,7 +26,7 @@ layernorm: true
 # Hyperbolic
 curvature: 1.0
 residual_weight_init: 0.0
-residual_delta_init: 1.0
+residual_delta_init: 2.0
 concat_mode: direct
 compute_scores: lorentz_inner
 reset_params: xavier

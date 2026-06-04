@@ -7,10 +7,10 @@ mlp_dim: 3072
 patch_size: 4
 
 # Optimizer 
-lr: 3.0e-4
-weight_decay: 1.0e-2
-hyp_lr: 3.0e-4
-hyp_weight_decay: 1.0e-4
+lr: 1e-4
+weight_decay: 1e-2
+hyp_lr: 1e-4
+hyp_weight_decay: 1e-4
 stabilize: 1
 scheduler: step
 lr_step_size: 30
