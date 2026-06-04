@@ -25,10 +25,10 @@ layernorm: true
 
 # Hyperbolic
 curvature: 1.0
-residual_weight_init: -1.0
+residual_weight_init: 0.0
 residual_delta_init: 1.0
 concat_mode: direct
 compute_scores: lorentz_inner
 reset_params: xavier
-a_default: 0.1
+a_default: 0.05
 use_weight_norm: false

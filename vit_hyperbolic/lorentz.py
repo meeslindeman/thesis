@@ -319,13 +319,8 @@ class Lorentz(nn.Module):
 
     def geodesic_residual(self, x: torch.Tensor, y: torch.Tensor, weight: float = 0.5) -> torch.Tensor:
         """Residual: Exp_x( weight * Log_x(y) )."""
-        with torch.autocast(device_type="cuda", enabled=False):
-            xf = x.float()
-            yf = y.float()
-            v = self.logmap(xf, yf).float()
-            v = v * weight
-            out = self.expmap(xf, v)
-        return out.to(x.dtype)
+        v = self.logmap(x, y) * weight
+        return self.expmap(x, v)
 
     def lorentz_residual(self, x: torch.Tensor, y: torch.Tensor, wx: float = 1.0, wy: float = 1.0, eps: float = 1e-9) -> torch.Tensor:
         """LResNet-style residual via ambient interpolation + renormalization (He et al.)."""
@@ -347,19 +342,12 @@ class Lorentz(nn.Module):
 
     def gyro_add(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Gyro-addition via Exp_x( PT_{0->x}( Log_0(y) ) ) as in (Shi, et al.)."""
-        with torch.autocast(device_type="cuda", enabled=False):
-            xf = x.float()
-            yf = y.float()
-            kf = self.k().float()
-
-            o = torch.zeros_like(xf)
-            o[..., :1] = 1.0 / torch.sqrt(kf)
-
-            v0 = self.logmap0(yf)                                # [...,1+D], time=0
-            vx = self.parallel_transport(o, v0, xf)              # [...,1+D]
-            vx = self.proju(xf, vx, dim=-1)                      # enforce tangent at x
-            out = self.expmap(xf, vx)
-        return out.to(x.dtype)
+        o = torch.zeros_like(x)
+        o[..., :1] = 1.0 / torch.sqrt(self.k().to(dtype=x.dtype, device=x.device))
+        v0 = self.logmap0(y)
+        vx = self.parallel_transport(o, v0, x)
+        vx = self.proju(x, vx, dim=-1)
+        return self.expmap(x, vx)
 
     def gyro_inv(self, x: torch.Tensor) -> torch.Tensor:
         """Gyro-inverse (additive inverse) for the gyro-addition defined in gyro_add."""
