@@ -1,6 +1,6 @@
 import argparse
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from pathlib import Path
 
 import numpy as np
@@ -14,15 +14,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "main"))
 
 from data_utils import get_dataset, get_dataloader
-from utils import build_parser, cfg_from_args, set_seed
+from utils import set_seed
 
 MODELS = ["euclidean", "hyperbolic", "hypercore"]
 
 from config_base import Config
-
-
-def get_config_class(model: str):
-    return Config
 
 
 def build_model(model: str, cfg):
@@ -51,7 +47,7 @@ def build_model(model: str, cfg):
             in_channel=cfg.num_channels,
             hidden_channel=cfg.hidden_size // cfg.num_attention_heads,
             out_channel=cfg.num_classes,
-            mlp_hidden_size=cfg.mlp_dim // cfg.num_attention_heads,
+            mlp_hidden_size=cfg.mlp_dim + 1,
             num_heads=cfg.num_attention_heads,
             dropout=cfg.dropout_rate,
         )
@@ -67,18 +63,35 @@ def update_metrics(metrics, n, loss, acc1, acc5):
     metrics["top5"].update(acc5.item(), n)
 
 
+def _cfg_from_checkpoint(path: str) -> tuple:
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    if "config" not in state:
+        raise RuntimeError(f"Checkpoint {path} has no saved config.")
+    init_names = {f.name for f in fields(Config) if f.init}
+    cfg = Config(**{k: v for k, v in state["config"].items() if k in init_names})
+    return cfg, state
+
+
 def main():
     pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument("--model", default="hyperbolic", choices=MODELS)
+    pre.add_argument("--model", required=True, choices=MODELS)
+    pre.add_argument("--checkpoint", required=True)
     pre_args, _ = pre.parse_known_args()
 
-    Config = get_config_class(pre_args.model)
-    parser = build_parser(Config)
-    parser.add_argument("--model", default=pre_args.model, choices=MODELS)
-    parser.add_argument("--checkpoint", required=True, help="Path to trained checkpoint")
+    cfg, state = _cfg_from_checkpoint(pre_args.checkpoint)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", required=True, choices=MODELS)
+    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--batch_size", type=int, default=cfg.batch_size)
+    parser.add_argument("--device", default=cfg.device)
     parser.add_argument("--epsilon", type=float, required=True, help="FGSM perturbation magnitude")
     args = parser.parse_args()
-    cfg = cfg_from_args(args, Config)
+
+    cfg.batch_size = args.batch_size
+    cfg.device = args.device
+    if cfg.device == "auto":
+        cfg.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     set_seed(cfg.seed)
     device = torch.device(cfg.device)
@@ -89,7 +102,6 @@ def main():
     )
 
     model = build_model(args.model, cfg).to(device)
-    state = torch.load(args.checkpoint, map_location=device, weights_only=True)
     model.load_state_dict(state["model"], strict=False)
     model.eval()
 

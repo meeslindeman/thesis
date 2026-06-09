@@ -184,6 +184,7 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: f
     model.train()
     total_loss = 0.0
     correct = 0
+    n = 0
     for images, labels in trainloader:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
@@ -209,7 +210,7 @@ def train_one_epoch(model, trainloader, optimizer, loss_fn, device, grad_clip: f
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
         total_loss += loss.item() * images.size(0)
-    n = len(trainloader.dataset)
+        n += images.size(0)
     return total_loss / n, correct / n
 
 

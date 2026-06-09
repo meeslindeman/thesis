@@ -7,7 +7,6 @@ class DualOptimizer:
     """
     AdamW for Euclidean params + RiemannianAdam for ManifoldParameters
     """
-
     def __init__(self, opt_euc, opt_hyp):
         self.optimizers = [opt_euc, opt_hyp]
 

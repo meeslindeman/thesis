@@ -47,7 +47,7 @@ def build_model(model: str, cfg):
             in_channel=cfg.num_channels,
             hidden_channel=cfg.hidden_size // cfg.num_attention_heads,
             out_channel=cfg.num_classes,
-            mlp_hidden_size=cfg.mlp_dim // cfg.num_attention_heads,
+            mlp_hidden_size=cfg.mlp_dim + 1,
             num_heads=cfg.num_attention_heads,
             dropout=cfg.dropout_rate,
         )

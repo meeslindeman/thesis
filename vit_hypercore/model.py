@@ -95,12 +95,12 @@ class LViT(nn.Module):
 
         self.patch_embedding = hnn.LorentzPatchEmbedding(manifold_in, image_size, patch_size, self.in_channel, self.width - 1)
         self.positional_encoding = ManifoldParameter(self.manifold_in.random_normal((1, self.num_patches, self.width)), manifold=self.manifold_in, requires_grad=True)
-        self.add_pos = hnn.LResNet(manifold_in, use_scale=True, scale=1.0)
+        self.add_pos = hnn.LResNet(manifold_in, use_scale=True, scale=3.0)
         self.dropout = hnn.LorentzDropout(self.manifold_hidden, dropout=dropout)
         # projects from manifold_in to manifold_hidden (handles curvature change if different)
         self.fc = hnn.LorentzLinear(manifold_in=manifold_in, manifold_out=self.manifold_hidden, in_features=self.width, out_features=self.width - 1)
 
-        self.encoder = LViTEncoder(self.manifold_hidden, self.num_layers, self.hidden_channel, mlp_hidden_size * num_heads, num_heads, dropout, output_attentions, manifold_out=manifold_out)
+        self.encoder = LViTEncoder(self.manifold_hidden, self.num_layers, self.hidden_channel, mlp_hidden_size, num_heads, dropout, output_attentions, manifold_out=manifold_out)
 
         if self.out_channel > 0:
             self.classifier = hnn.LorentzMLR(self.manifold_out, self.width, self.out_channel)
