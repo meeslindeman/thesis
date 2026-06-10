@@ -92,7 +92,7 @@ class LorentzMHA(nn.Module):
         ])
 
         self.dropout = nn.Dropout(attn_dropout_rate)
-        self.temperature = nn.Parameter(torch.ones(1))
+        self.temperature = nn.Parameter(torch.ones(1) * math.sqrt(self.head_spatial_dim))
 
         # After fusion we always return to full Lorentz dimension D = 1 + d
         if out_dim is None:

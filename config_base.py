@@ -54,7 +54,6 @@ class Config:
 
     # Euclidean ViT
     qkv_bias: bool = True
-    initializer_range: float = 0.02    
 
     # Hyperbolic
     curvature: float = 1.0
