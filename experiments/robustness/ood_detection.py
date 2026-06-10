@@ -98,14 +98,12 @@ def build_model(model: str, cfg):
 # ── Score extraction ───────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def get_in_dist_scores(model, loader, device, T):
+def get_in_dist_scores(model, loader, device):
     scores, right_scores, wrong_scores = [], [], []
     for data, targets in tqdm(loader, desc="In-distribution"):
         data = data.to(device)
-        output = model(data)
-        smax = F.softmax(output, dim=1).cpu().numpy()
-        energy = -(T * torch.logsumexp(output / T, dim=1)).cpu().numpy()
-        scores.append(energy)
+        smax = F.softmax(model(data), dim=1).cpu().numpy()
+        scores.append(-np.max(smax, axis=1))
         preds = np.argmax(smax, axis=1)
         tgt = targets.numpy().squeeze()
         right_mask = preds == tgt
@@ -121,14 +119,14 @@ def get_in_dist_scores(model, loader, device, T):
 
 
 @torch.no_grad()
-def get_ood_scores(model, loader, device, T, max_batches=None):
+def get_ood_scores(model, loader, device, max_batches=None):
     scores = []
     for i, (data, _) in enumerate(tqdm(loader, desc="OOD", leave=False)):
         if max_batches is not None and i >= max_batches:
             break
         data = data.to(device)
-        output = model(data)
-        scores.append(-(T * torch.logsumexp(output / T, dim=1)).cpu().numpy())
+        smax = F.softmax(model(data), dim=1).cpu().numpy()
+        scores.append(-np.max(smax, axis=1))
     return np.concatenate(scores)
 
 
@@ -175,7 +173,6 @@ def main():
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--batch_size", type=int, default=cfg.batch_size)
     parser.add_argument("--device", default=cfg.device)
-    parser.add_argument("--T", type=float, default=1.0, help="Energy temperature")
     parser.add_argument("--textures_dir", default=None, help="DTD Textures root (ImageFolder layout)")
     parser.add_argument("--svhn_dir", default="data/ood/svhn", help="SVHN root; downloaded automatically on first run")
     parser.add_argument("--places365_dir", default=None, help="Places365 root (ImageFolder layout)")
@@ -201,9 +198,9 @@ def main():
     ood_transform = make_ood_transform(cfg)
     ood_num_examples = len(dataset["test"]) // 5
 
-    print(f"\nModel: {args.model}  |  Dataset: {cfg.dataset}  |  T={args.T}")
+    print(f"\nModel: {args.model}  |  Dataset: {cfg.dataset}  |  Score: MSP")
 
-    in_score, right_score, wrong_score = get_in_dist_scores(model, test_loader, device, args.T)
+    in_score, right_score, wrong_score = get_in_dist_scores(model, test_loader, device)
     num_right, num_wrong = len(right_score), len(wrong_score)
     print(f"Error Rate: {100 * num_wrong / (num_wrong + num_right):.2f}%")
 
@@ -216,7 +213,7 @@ def main():
     max_batches = ood_num_examples // cfg.batch_size
 
     def evaluate_ood(name, ood_data):
-        out_score = get_ood_scores(model, make_ood_loader(ood_data, cfg.batch_size), device, args.T, max_batches)
+        out_score = get_ood_scores(model, make_ood_loader(ood_data, cfg.batch_size), device, max_batches)
         auroc, aupr, fpr = get_measures(-in_score, -out_score)
         auroc_list.append(auroc)
         aupr_list.append(aupr)

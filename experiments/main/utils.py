@@ -32,6 +32,16 @@ def _make_scheduler(cfg, opt):
         return torch.optim.lr_scheduler.SequentialLR(
             opt, schedulers=[warmup, cosine], milestones=[cfg.warmup_epochs]
         )
+    elif cfg.scheduler == "warmup_step":
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            opt, start_factor=1e-6, end_factor=1.0, total_iters=cfg.warmup_epochs
+        )
+        step = torch.optim.lr_scheduler.StepLR(
+            opt, step_size=cfg.lr_step_size, gamma=cfg.lr_gamma
+        )
+        return torch.optim.lr_scheduler.SequentialLR(
+            opt, schedulers=[warmup, step], milestones=[cfg.warmup_epochs]
+        )
     return None
 
 

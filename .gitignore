@@ -54,3 +54,4 @@ wandb/
 sweeps/
 HierVision/
 checkpoints/
+checkpoints_final/
