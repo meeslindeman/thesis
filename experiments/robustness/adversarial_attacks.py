@@ -105,6 +105,17 @@ def main():
     model.load_state_dict(state["model"], strict=False)
     model.eval()
 
+    if args.model == "hyperbolic":
+        diag_images, _ = next(iter(testloader))
+        with torch.no_grad():
+            pooled = model.encode(diag_images.to(device))
+            m = model.manifold.metrics(pooled)
+        print(
+            f"\nHyperbolic pooled-rep norms (one batch, clean):\n"
+            f"  spatial norm  mean={m['norm_E_mean']:.2f}  max={m['norm_E_max']:.2f}\n"
+            f"  hyp distance  mean={m['hyp_dist_mean']:.4f}  max={m['hyp_dist_max']:.4f}"
+        )
+
     loss_fn = nn.CrossEntropyLoss()
     metrics = {"clean": create_metrics(), "fgsm": create_metrics()}
 

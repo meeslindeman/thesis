@@ -11,13 +11,14 @@ from pathlib import Path
 from data_utils import get_dataset, get_dataloader
 from utils import build_parser, cfg_from_args, load_yaml, set_seed, train_one_epoch, evaluate, save_checkpoint, load_checkpoint, build_scheduler
 
-MODELS = ["euclidean", "hyperbolic", "hypercore"]
+MODELS = ["euclidean", "hyperbolic", "hypercore", "hexformer"]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_DIRS = {
-    "euclidean": REPO_ROOT / "vit",
+    "euclidean":  REPO_ROOT / "vit",
     "hyperbolic": REPO_ROOT / "vit_hyperbolic",
     "hypercore":  REPO_ROOT / "vit_hypercore",
+    "hexformer":  REPO_ROOT / "vit_hexformer",
 }
 
 
@@ -51,6 +52,10 @@ def build_model(model: str, cfg):
             num_heads=cfg.num_attention_heads,
             dropout=cfg.dropout_rate,
         )
+
+    elif model == "hexformer":
+        from vit_hexformer.model import build_hexformer
+        return build_hexformer(cfg)
 
 
 def _hyperbolic_param_groups(model, lr, weight_decay, lambda_margin: float = 0.0):
@@ -89,6 +94,10 @@ def build_optimizer(model_name: str, model, cfg):
         from vit_hypercore.optimizer import build_optimizer as _build
         return _build(model, cfg)
 
+    if model_name == "hexformer":
+        from vit_hexformer.optimizer import build_optimizer as _build
+        return _build(model, cfg)
+
 
 def main():
     # Phase 1: extract --model before building the full parser, so each model's
@@ -102,7 +111,7 @@ def main():
     yaml_overrides = load_yaml(MODEL_DIRS[pre_args.model] / "config.yml")
     parser = build_parser(Config, yaml_overrides)
     parser.add_argument("--model", default=pre_args.model, choices=MODELS,
-                        help="Which model to train (euclidean | hyperbolic | hypercore)")
+                        help="Which model to train (euclidean | hyperbolic | hypercore | hexformer)")
     parser.add_argument("--checkpoint_dir", default=None,
                         help="Directory to save checkpoints (omit to skip saving)")
     parser.add_argument("--resume", default=None,

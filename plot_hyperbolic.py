@@ -27,47 +27,55 @@ from matplotlib.patches import Circle
 # Checkpoint helpers
 # ---------------------------------------------------------------------------
 
-def infer_config(state):
-    # Classifier: support both old LorentzFullyConnected (.U) and new LorentzMLR (.z)
+def extract_config(ckpt, state):
+    """Return config dict, preferring the stored config over state-dict inference."""
+    if "config" in ckpt:
+        cfg = ckpt["config"]
+        return {
+            "hidden_size":         cfg["hidden_size"],
+            "num_classes":         cfg["num_classes"],
+            "mlp_dim":             cfg["mlp_dim"],
+            "num_hidden_layers":   cfg["num_hidden_layers"],
+            "patch_size":          cfg["patch_size"],
+            "image_size":          cfg["image_size"],
+            "num_channels":        cfg.get("num_channels", 3),
+            "num_attention_heads": cfg["num_attention_heads"],
+            "final_op":            cfg.get("final_op", "cls"),
+            "use_weight_norm":     cfg.get("use_weight_norm", False),
+            "curvature":           cfg.get("curvature", 1.0),
+        }
+    # Fallback for checkpoints that predate config saving
+    print("  WARNING: no 'config' key in checkpoint — inferring from state dict")
     if "classifier.U" in state:
         hidden_size = state["classifier.U"].shape[0]
         num_classes = state["classifier.U"].shape[1]
     elif "classifier.z" in state:
-        # z shape: [num_classes+1, hidden_size]
         hidden_size = state["classifier.z"].shape[1]
         num_classes = state["classifier.z"].shape[0] - 1
     else:
         raise KeyError("Cannot infer classifier shape: no 'classifier.U' or 'classifier.z' key")
 
-    # MLP dim: support both weight-norm (.v) and standard (.U)
     if "encoder.blocks.0.mlp.fc1.U" in state:
         mlp_dim = state["encoder.blocks.0.mlp.fc1.U"].shape[1]
     elif "encoder.blocks.0.mlp.fc1.v" in state:
         mlp_dim = state["encoder.blocks.0.mlp.fc1.v"].shape[1]
     else:
-        mlp_dim = hidden_size * 4  # sensible default
+        mlp_dim = hidden_size * 4
 
     num_hidden_layers = max(
         int(k.split(".")[2]) for k in state if k.startswith("encoder.blocks.")
     ) + 1
 
     proj_v_key = "embedding.patch_embeddings.projection.v"
-    if proj_v_key in state:
-        patch_dim = state[proj_v_key].shape[0]
-    else:
-        patch_dim = state["embedding.patch_embeddings.projection.U"].shape[0]
+    patch_dim = (state[proj_v_key] if proj_v_key in state
+                 else state["embedding.patch_embeddings.projection.U"]).shape[0]
     patch_size = int(round((patch_dim / 3) ** 0.5))
-
     num_patches = state["embedding.pos_space"].shape[1]
     image_size  = patch_size * int(round(num_patches ** 0.5))
-
-    final_op = "cls" if "embedding.cls_token" in state else "pooling"
-
-    head_keys = [
-        k for k in state
-        if k.startswith("encoder.blocks.0.attention.W_q.")
-        and (k.endswith(".U") or k.endswith(".v"))
-    ]
+    final_op    = "cls" if "embedding.cls_token" in state else "pooling"
+    head_keys   = [k for k in state
+                   if k.startswith("encoder.blocks.0.attention.W_q.")
+                   and (k.endswith(".U") or k.endswith(".v"))]
     use_weight_norm = "encoder.blocks.0.attention.W_q.0.v" in state
 
     return {
@@ -81,14 +89,16 @@ def infer_config(state):
         "num_attention_heads": len(head_keys),
         "final_op":            final_op,
         "use_weight_norm":     use_weight_norm,
+        "curvature":           1.0,
     }
 
 
-def build_model(state, cfg, curvature=1.0):
+def build_model(state, cfg):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from vit_hyperbolic.lorentz import Lorentz
     from vit_hyperbolic.model import LorentzViT
 
+    curvature = cfg.get("curvature", 1.0)
     model_cfg = {
         **cfg,
         "manifold":             Lorentz(curvature),
@@ -180,9 +190,9 @@ def main():
     state = ckpt["model"]
     print(f"Checkpoint: epoch={ckpt.get('epoch')}  acc={ckpt.get('acc')}")
 
-    cfg = infer_config(state)
+    cfg = extract_config(ckpt, state)
     print(f"Config: {cfg['num_classes']} classes  hidden={cfg['hidden_size']}  "
-          f"layers={cfg['num_hidden_layers']}")
+          f"layers={cfg['num_hidden_layers']}  curvature={cfg['curvature']}")
 
     model = build_model(state, cfg)
 
@@ -221,24 +231,25 @@ def main():
     reps, labels = extract_reps(model, loader, dev, max_samples=args.max_samples)
     # reps: [N, 1+D]  points on the Lorentz hyperboloid
 
-    # ---- Normalise to safe Poincaré radius before TangentPCA ----------------
-    # High-norm representations cause geomstats logmap to hit a numerical
-    # singularity → NaN → SVD failure.  Normalising to TARGET_R preserves all
-    # directional information (radial std < 1e-3, so every point is already at
-    # the same radius).  After TangentPCA the 2D coordinates are rescaled back
-    # to actual_r so the Poincaré disk plot shows points near the true edge.
-    TARGET_R = 0.9
-    r2    = TARGET_R ** 2
-    t_new = (1.0 + r2) / (1.0 - r2)
-    s_np  = reps[:, 1:].numpy()
-    s_norm = np.linalg.norm(s_np, axis=1, keepdims=True).clip(1e-9)
-    s_dir  = s_np / s_norm
-    s_new  = s_dir * (2.0 * TARGET_R / (1.0 - r2))
-    t_col  = np.full((len(reps), 1), t_new)
-    reps_norm = np.concatenate([t_col, s_new], axis=1).astype(np.float64)
-    # Per-point actual Poincaré radius (from original reps, before normalisation)
+    # Per-point Poincaré radius: x_space / (1 + x_time)  (exact for any curvature k=1)
+    s_np     = reps[:, 1:].numpy()
     r_actual = np.linalg.norm(s_np / (1.0 + reps[:, :1].numpy()), axis=1)  # [N]
-    print(f"Original Poincaré radius: mean={r_actual.mean():.4f}  std={r_actual.std():.5f}  →  normalised to {TARGET_R} for TangentPCA")
+    print(f"Poincaré radius: mean={r_actual.mean():.4f}  std={r_actual.std():.5f}  "
+          f"max={r_actual.max():.4f}")
+
+    # Safety clip: geomstats logmap becomes numerically unstable only above ~0.98.
+    # If any point exceeds this threshold, nudge it inward along its current direction.
+    CLIP_R = 0.97
+    reps_np = reps.numpy().astype(np.float64)
+    if r_actual.max() > CLIP_R:
+        print(f"  clipping {(r_actual > CLIP_R).sum()} points to r={CLIP_R}")
+        r2    = CLIP_R ** 2
+        t_clip = (1.0 + r2) / (1.0 - r2)
+        s_clip = s_np / np.linalg.norm(s_np, axis=1, keepdims=True).clip(1e-9) * (2.0 * CLIP_R / (1.0 - r2))
+        mask = r_actual > CLIP_R
+        reps_np[mask, 0]  = t_clip
+        reps_np[mask, 1:] = s_clip[mask].astype(np.float64)
+    reps_norm = reps_np
 
     # ---- TangentPCA via geomstats ----------------------------------------
     print("Fitting TangentPCA (Fréchet mean + PCA on tangent space)...")
@@ -257,7 +268,6 @@ def main():
     tangent_dir = coords_2d / np.linalg.norm(coords_2d, axis=1, keepdims=True).clip(1e-9)
     poincare    = r_actual[:, None] * tangent_dir  # [N, 2]
 
-    print(f"Poincaré radii: mean={r_actual.mean():.4f}  std={r_actual.std():.5f}")
 
     # ---- Classifier weight vectors as Poincaré disk points ------------------
     # Project the full weight vector (time + spatial) onto the 2D PCA basis,

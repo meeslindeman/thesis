@@ -58,6 +58,8 @@ class Config:
 
     # Hyperbolic
     curvature: float = 1.0
+    learn_k: bool = False       # learnable curvature (HexFormer)
+    clip_features: float = 1.0  # clipping radius for euclidean→hyperbolic projection (HexFormer hybrid)
 
     # LorentzViT
     residual_weight_init: float = 0.0

@@ -1,0 +1,23 @@
+# HexFormer - fully hyperbolic ViT (Lorentz encoder + Lorentz decoder)
+# Architecture (tiny preset from HexFormer paper)
+num_hidden_layers: 9
+hidden_size: 192
+num_attention_heads: 12
+mlp_dim: 384
+patch_size: 4
+dropout_rate: 0.0
+
+# Optimizer
+lr: 4.35e-3
+weight_decay: 5.0e-2
+scheduler: cosine
+warmup_epochs: 0
+
+# Regularization
+label_smoothing: 0.1
+augmentation: advanced
+
+# Hyperbolic
+curvature: 1.0
+learn_k: false
+clip_features: 1.0
