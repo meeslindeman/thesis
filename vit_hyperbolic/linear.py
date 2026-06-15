@@ -87,7 +87,7 @@ class LorentzFullyConnected(nn.Module):
     def create_spacelike_vector(self):
         U = self.get_U()
         U_norm = U.norm(dim=0, keepdim=True).clamp(1e-10)
-        U_norm_sqrt_k_b = (self.manifold.k().sqrt() * self.a / U_norm).clamp(-100, 100)
+        U_norm_sqrt_k_b = (self.manifold.k().sqrt() * self.a / U_norm).clamp(-80.0, 80.0)
         time = -U_norm * torch.sinh(U_norm_sqrt_k_b)
         space = torch.cosh(U_norm_sqrt_k_b) * U
         return torch.cat([time, space], dim=0)

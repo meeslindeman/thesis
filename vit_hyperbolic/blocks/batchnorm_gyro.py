@@ -55,13 +55,13 @@ class GyroLorentzBatchNorm(nn.Module):
             with torch.no_grad():
                 pair = torch.stack([self.running_mean.to(mean.dtype), mean.detach()])
                 w    = x.new_tensor([1.0 - self.momentum, self.momentum])
-                self.running_mean.copy_(
-                    self.manifold.lorentz_midpoint(pair, weights=w).to(self.running_mean.dtype)
-                )
+                new_mean = self.manifold.lorentz_midpoint(pair, weights=w)
+                if torch.isfinite(new_mean).all():
+                    self.running_mean.copy_(new_mean.to(self.running_mean.dtype))
                 if self.normalize_variance and var is not None:
-                    self.running_var.copy_(
-                        (1.0 - self.momentum) * self.running_var + self.momentum * var.detach()
-                    )
+                    new_var = (1.0 - self.momentum) * self.running_var + self.momentum * var.detach()
+                    if torch.isfinite(new_var).all():
+                        self.running_var.copy_(new_var)
         else:
             mean = self.running_mean.to(x.dtype)                # [C]
             var  = self.running_var.to(x.dtype) if self.normalize_variance else None

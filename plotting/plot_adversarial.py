@@ -3,13 +3,11 @@ import argparse
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import matplotlib.lines as mlines
-
-HYPERBOLIC_COLOR = "#0D9488"
-EUCLIDEAN_COLOR  = "#F97316"
+import matplotlib.cm as cm
+import numpy as np
 
 plt.rcParams.update({
-    "font.size":        11,
+    "font.size":        15,
     "axes.linewidth":   0.8,
     "xtick.direction":  "in",
     "ytick.direction":  "in",
@@ -17,15 +15,28 @@ plt.rcParams.update({
     "ytick.major.size": 4,
 })
 
+MODEL_ORDER = ["euclidean", "hypercore", "hexformer", "hyperbolic"]
+
+MODEL_NAMES = {
+    "euclidean":  "Euclidean",
+    "hyperbolic": "Ours",
+    "hypercore":  "LViT",
+    "hexformer":  "HexFormer",
+}
+
+_cividis = plt.colormaps["cividis"]
+_c = [_cividis(x) for x in np.linspace(0.1, 0.9, 4)]
 MODEL_COLORS = {
-    "hyperbolic": HYPERBOLIC_COLOR,
-    "euclidean":  EUCLIDEAN_COLOR,
+    "euclidean":  _c[0],
+    "hypercore":  _c[1],
+    "hexformer":  _c[2],
+    "hyperbolic": _c[3],
 }
 
 
 def parse_log(path: str) -> dict:
     model_re  = re.compile(r"Model:\s*(\S+)\s*\|\s*epsilon:\s*([\d.]+)")
-    result_re = re.compile(r"(clean|fgsm)\s+Loss:\s*[\d.]+\s+Acc@1:\s*([\d.]+)\s+Acc@5:\s*([\d.]+)")
+    result_re = re.compile(r"(clean|fgsm)\s+Loss:\s*[\d.]+\s+Acc@1:\s*([\d.]+)")
 
     data = {}
     current_model, current_eps = None, None
@@ -40,44 +51,47 @@ def parse_log(path: str) -> dict:
                 continue
             m = result_re.search(line)
             if m and current_model is not None:
-                data[current_model][current_eps][m.group(1)] = {
-                    "acc1": float(m.group(2)),
-                    "acc5": float(m.group(3)),
-                }
+                data[current_model][current_eps][m.group(1)] = float(m.group(2))
 
     return data
 
 
 def plot(path: str, output: str | None = None):
-    data = parse_log(path)
+    data     = parse_log(path)
+    present  = [m for m in MODEL_ORDER if m in data]
+    n_models = len(present)
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # All epsilon values (assumed consistent across models)
+    epsilons = sorted(next(iter(data.values())).keys())
+    # Groups: clean first, then one per epsilon
+    groups      = ["Clean"] + [f"{e * 255:.1f}/255" for e in epsilons]
+    n_groups    = len(groups)
 
-    all_epsilons = None
-    for model, eps_data in data.items():
-        color    = MODEL_COLORS.get(model, "gray")
-        epsilons = sorted(eps_data.keys())
-        all_epsilons = epsilons
+    bar_w = 0.7 / n_models
+    offsets = np.linspace(-(n_models - 1) / 2, (n_models - 1) / 2, n_models) * bar_w
+    x = np.arange(n_groups)
 
-        fgsm_acc1  = [eps_data[e]["fgsm"]["acc1"] for e in epsilons]
-        clean_acc1 = eps_data[epsilons[0]]["clean"]["acc1"]
+    fig, ax = plt.subplots(figsize=(7, 4))
 
-        ax.plot(epsilons, fgsm_acc1, color=color, linewidth=1.8, marker="s", markersize=4)
-        ax.axhline(clean_acc1, color=color, linewidth=1.0, linestyle="--", alpha=0.6)
+    for i, model in enumerate(present):
+        color   = MODEL_COLORS[model]
+        eps_data = data[model]
+        clean_acc = eps_data[epsilons[0]]["clean"]
+        fgsm_accs = [eps_data[e]["fgsm"] for e in epsilons]
+        values    = [clean_acc] + fgsm_accs
 
-    legend_handles = [
-        mlines.Line2D([], [], color=c, linewidth=1.8, marker="s", markersize=4, label=m.capitalize())
-        for m, c in MODEL_COLORS.items() if m in data
-    ] + [
-        mlines.Line2D([], [], color="gray", linewidth=1.0, linestyle="--", alpha=0.6, label="Clean"),
-    ]
+        ax.bar(x + offsets[i], values, width=bar_w * 0.9,
+               color=color, label=MODEL_NAMES.get(model, model.capitalize()),
+               zorder=3)
 
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups)
+    ax.set_ylim(0, 80)
     ax.set_xlabel("ε")
     ax.set_ylabel("Accuracy (%)")
-    ax.set_xticks(all_epsilons)
-    ax.set_xticklabels([f"{e * 255:.1f}/255" for e in all_epsilons])
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
-    ax.legend(handles=legend_handles, frameon=False, loc="lower left")
+    ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.01),
+              ncol=n_models, fontsize=13)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", color="0.88", linewidth=0.7, zorder=0)
 
@@ -85,8 +99,8 @@ def plot(path: str, output: str | None = None):
 
     plots_dir = Path("plotting/plots")
     plots_dir.mkdir(parents=True, exist_ok=True)
-    out_path = Path(output) if output else plots_dir / "adversarial.png"
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    out_path = Path(output) if output else plots_dir / "adversarial.pdf"
+    fig.savefig(out_path, bbox_inches="tight")
     print(f"Saved to {out_path}")
 
 

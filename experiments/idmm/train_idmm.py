@@ -1,16 +1,8 @@
-"""
-IDMM two-stage training: hyperbolic or euclidean ViT.
-
-Stage 1 (pretrain): Instance discrimination with multi-crop and CutMix at low resolution.
-Stage 2 (finetune): Supervised cross-entropy at full resolution, with positional embeddings
-                    interpolated from the pretrain resolution.
-
-Paper: "Training Vision Transformers with Only 2040 Images" (Cao et al., 2022)
-"""
-
 import argparse
 import copy
+import gc
 import random
+import sys
 import time
 import torch
 import torch.nn as nn
@@ -23,9 +15,14 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 from data_utils import get_dataset, get_dataloader
-from utils import build_parser, cfg_from_args, set_seed, evaluate, build_scheduler
+from utils import build_parser, cfg_from_args, load_yaml, set_seed, evaluate, build_scheduler
 
 IDMM_MODELS = ["euclidean", "hyperbolic"]
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MODEL_DIRS = {
+    "euclidean":  REPO_ROOT / "vit",
+    "hyperbolic": REPO_ROOT / "vit_hyperbolic",
+}
 _IMAGENET_MEAN = [0.485, 0.456, 0.406]
 _IMAGENET_STD  = [0.229, 0.224, 0.225]
 
@@ -179,6 +176,10 @@ def cutmix_batch(images: torch.Tensor, labels: torch.Tensor, alpha: float = 0.5)
 # Training loops
 # ---------------------------------------------------------------------------
 
+class NaNLossAbort(Exception):
+    pass
+
+
 def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label_smoothing: float, n_global_crops: int = 2):
     """
     Instance discrimination over all crops.
@@ -215,16 +216,19 @@ def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label
     return total_loss / len(loader.dataset)
 
 
-def finetune_one_epoch(model, loader, optimizer, loss_fn, device, epoch: int):
+def finetune_one_epoch(model, loader, optimizer, loss_fn, device, epoch: int, accum_steps: int = 1):
     """Alternate Mixup (even epochs) and CutMix (odd epochs), matching the paper."""
     model.train()
     total_loss, correct = 0.0, 0
     use_mixup = (epoch % 2 == 0)
 
-    for images, labels in loader:
+    nan_streak = 0
+    nan_tolerance = 3
+
+    optimizer.zero_grad(set_to_none=True)
+    for i, (images, labels) in enumerate(loader):
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
-        optimizer.zero_grad(set_to_none=True)
 
         if use_mixup:
             images, labels_a, labels_b, lam = mixup_batch(images, labels)
@@ -233,10 +237,24 @@ def finetune_one_epoch(model, loader, optimizer, loss_fn, device, epoch: int):
 
         logits = model(images)
         loss = lam * loss_fn(logits, labels_a) + (1 - lam) * loss_fn(logits, labels_b)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item() * images.size(0)
-        correct += (logits.detach().argmax(dim=1) == labels_a).sum().item()
+        if torch.isfinite(loss):
+            (loss / accum_steps).backward()
+            nan_streak = 0
+        else:
+            nan_streak += 1
+            print(f"  [NaN] loss is non-finite at batch {i} (streak={nan_streak})")
+            if nan_streak >= nan_tolerance:
+                raise NaNLossAbort(f"NaN loss for {nan_streak} consecutive batches at epoch {epoch+1}, batch {i} — aborting.")
+
+        is_last = (i + 1 == len(loader))
+        if (i + 1) % accum_steps == 0 or is_last:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+        if torch.isfinite(loss):
+            total_loss += loss.item() * images.size(0)
+            correct += (logits.detach().argmax(dim=1) == labels_a).sum().item()
 
     n = len(loader.dataset)
     return total_loss / n, correct / n
@@ -260,17 +278,19 @@ def build_vit(model_name: str, cfg, device):
         raise ValueError(f"Unknown model '{model_name}'. IDMM supports: {IDMM_MODELS}")
 
 
-def load_pretrained_encoder(model, checkpoint_path: str, cfg, device):
+def load_pretrained_encoder(model, checkpoint_path: str, cfg, device, keep_classifier: bool = False):
     """
     Load pretrained encoder weights, interpolating positional embeddings if the
-    pretrain resolution differs from the current image_size (e.g. 112 → 224).
+    pretrain resolution differs from the current image_size (e.g. 112 → 224 or 224 → 448).
 
-    Positional embedding keys:
-      LorentzViT: embedding.pos_space         [1, N, hidden_size]
-      ViT:        embedding.position_embeddings [1, N, hidden_size]
+    keep_classifier: set True when continuing from a same-task fine-tuned checkpoint
+                     (e.g. the 224 stage into the 448 stage) so the classifier head is reused.
     """
     state = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    encoder_state = {k: v for k, v in state["model"].items() if not k.startswith("classifier")}
+    if keep_classifier:
+        encoder_state = dict(state["model"])
+    else:
+        encoder_state = {k: v for k, v in state["model"].items() if not k.startswith("classifier")}
 
     # Determine which key holds the position embeddings
     pos_key = None
@@ -285,13 +305,18 @@ def load_pretrained_encoder(model, checkpoint_path: str, cfg, device):
         old_n = pos_weights.shape[1]
         new_n = (cfg.image_size // cfg.patch_size) ** 2
         if old_n != new_n:
-            old_side = int(old_n ** 0.5)
+            # Separate CLS token (first position) from patch tokens before interpolating
+            cls_pos = pos_weights[:, :1, :]
+            patch_pos = pos_weights[:, 1:, :]
+            old_patch_n = patch_pos.shape[1]
+            old_side = int(round(old_patch_n ** 0.5))
             new_side = cfg.image_size // cfg.patch_size
             D = pos_weights.shape[2]
-            pos = pos_weights.reshape(1, old_side, old_side, D).permute(0, 3, 1, 2).float()
+            pos = patch_pos.reshape(1, old_side, old_side, D).permute(0, 3, 1, 2).float()
             pos = F.interpolate(pos, size=(new_side, new_side), mode='bicubic', align_corners=False)
-            pos_weights = pos.permute(0, 2, 3, 1).reshape(1, new_side * new_side, D)
-            print(f"Interpolated position embeddings: {old_n} → {new_n} tokens ({old_side}×{old_side} → {new_side}×{new_side})")
+            patch_pos = pos.permute(0, 2, 3, 1).reshape(1, new_side * new_side, D)
+            pos_weights = torch.cat([cls_pos.to(patch_pos.dtype), patch_pos], dim=1)
+            print(f"Interpolated position embeddings: {old_patch_n} → {new_side*new_side} tokens ({old_side}×{old_side} → {new_side}×{new_side})")
 
     missing, unexpected = model.load_state_dict(encoder_state, strict=False)
     print(f"Loaded pretrained encoder from {checkpoint_path}")
@@ -300,9 +325,9 @@ def load_pretrained_encoder(model, checkpoint_path: str, cfg, device):
     # Set (possibly interpolated) position embeddings
     if pos_key is not None:
         if hasattr(model.embedding, 'pos_space'):
-            model.embedding.pos_space.data = pos_weights.to(pos_weights.dtype).to(device)
+            model.embedding.pos_space.data = pos_weights.to(device)
         else:
-            model.embedding.position_embeddings.data = pos_weights.to(pos_weights.dtype).to(device)
+            model.embedding.position_embeddings.data = pos_weights.to(device)
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +342,8 @@ def main():
 
     from config_base import Config
 
-    parser = build_parser(Config)
+    yaml_overrides = load_yaml(MODEL_DIRS[pre_args.model] / "config.yml")
+    parser = build_parser(Config, yaml_overrides)
     parser.add_argument("--model",               default=pre_args.model, choices=IDMM_MODELS)
     parser.add_argument("--stage",               choices=["pretrain", "finetune"], required=True)
     parser.add_argument("--use_cutmix",          action="store_true", default=True)
@@ -325,12 +351,24 @@ def main():
     parser.add_argument("--n_local_crops",       type=int, default=4)
     # Paper: pretrain at 112×112, finetune at 224×224 (positional embeddings are interpolated)
     parser.add_argument("--pretrain_image_size", type=int, default=112)
+    parser.add_argument("--image_size",          type=int, default=None,
+                        help="Override cfg.image_size (e.g. 448 for the high-res fine-tune stage).")
     parser.add_argument("--pretrain_checkpoint", default=None)
+    parser.add_argument("--keep_classifier",     action="store_true", default=False,
+                        help="Also load classifier weights from the checkpoint (use for 224→448 stage).")
     parser.add_argument("--checkpoint_dir",      default=None)
     parser.add_argument("--data_dir",            default="data/")
     parser.add_argument("--validation_size",     type=int, default=30)
+    parser.add_argument("--accum_steps",         type=int, default=1,
+                        help="Gradient accumulation steps (effective batch = batch_size * accum_steps).")
+    parser.add_argument("--save_every",          type=int, default=50,
+                        help="Save a resume checkpoint every N epochs (0=disabled).")
+    parser.add_argument("--resume_checkpoint",   default=None,
+                        help="Path to a finetune_resume.pt to continue interrupted training.")
     args = parser.parse_args()
     cfg = cfg_from_args(args, Config)
+    if args.image_size is not None:
+        cfg.image_size = args.image_size
 
     print(f"Model: {args.model}  Stage: {args.stage}")
     print(cfg)
@@ -363,7 +401,7 @@ def main():
         trainloader = DataLoader(
             indexed_train, batch_size=cfg.batch_size, shuffle=True,
             drop_last=True, collate_fn=multicrop_collate,
-            num_workers=8, pin_memory=True,
+            num_workers=8, pin_memory=True, persistent_workers=True,
         )
 
         optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
@@ -390,23 +428,42 @@ def main():
         # Build model at full resolution (224×224); positional embeddings are interpolated on load
         vit = build_vit(args.model, cfg, device)
 
-        if args.pretrain_checkpoint is not None:
-            load_pretrained_encoder(vit, args.pretrain_checkpoint, cfg, device)
+        optimizer = optim.AdamW(vit.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+        loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
+        scheduler = build_scheduler(cfg, optimizer)
+
+        start_epoch = 0
+        if args.resume_checkpoint is not None:
+            state = torch.load(args.resume_checkpoint, map_location=device, weights_only=True)
+            vit.load_state_dict(state["model"])
+            optimizer.load_state_dict(state["optimizer"])
+            if scheduler is not None and state.get("scheduler") is not None:
+                scheduler.load_state_dict(state["scheduler"])
+            start_epoch = state["epoch"]
+            print(f"Resumed from {args.resume_checkpoint} at epoch {start_epoch}")
+        elif args.pretrain_checkpoint is not None:
+            load_pretrained_encoder(vit, args.pretrain_checkpoint, cfg, device,
+                                    keep_classifier=args.keep_classifier)
 
         dataset, _ = get_dataset(
             cfg.dataset, data_dir=args.data_dir,
             validation_size=args.validation_size,
+            image_size=cfg.image_size,
         )
         dataloaders = get_dataloader(dataset, cfg.batch_size, shuffle=True, drop_last=False)
         trainloader = dataloaders["train"]
         testloader  = dataloaders["test"]
 
-        optimizer = optim.AdamW(vit.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
-        loss_fn = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
-        scheduler = build_scheduler(cfg, optimizer)
+        resume_path = Path(args.checkpoint_dir) / "finetune_resume.pt" if args.checkpoint_dir else None
 
-        for epoch in range(cfg.epochs):
-            train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device, epoch)
+        for epoch in range(start_epoch, cfg.epochs):
+            try:
+                train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device, epoch, accum_steps=args.accum_steps)
+            except NaNLossAbort as e:
+                print(f"[FATAL] {e}")
+                sys.exit(1)
+            gc.collect()
+            torch.cuda.empty_cache()
             if scheduler is not None:
                 scheduler.step()
             acc, test_loss = evaluate(vit, testloader, loss_fn, device)
@@ -415,6 +472,15 @@ def main():
                 f"Train loss: {train_loss:.4f}, Train accuracy: {train_acc:.4f}, "
                 f"Test loss: {test_loss:.4f}, Test accuracy: {acc:.4f}"
             )
+            if resume_path is not None and args.save_every > 0 and (epoch + 1) % args.save_every == 0:
+                resume_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save({
+                    "epoch": epoch + 1,
+                    "model": vit.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                }, resume_path)
+                print(f"  [ckpt] saved resume checkpoint at epoch {epoch + 1}")
 
         if args.checkpoint_dir is not None:
             ckpt_path = Path(args.checkpoint_dir) / f"idmm_finetuned_{args.model}.pt"

@@ -8,14 +8,14 @@ patch_size: 4
 patch_embed_type: linear
 final_op: pooling
 
-# Optimizer 
+# Optimizer Base
 # lr: 1e-4 
 # weight_decay: 1e-1 
 # optimizer: adamw
 # scheduler: warmup_cosine
 # warmup_epochs: 10
 
-# Tiny
+# Optimizer Tiny
 lr: 1e-3 
 weight_decay: 0.05
 optimizer: adamw
@@ -33,8 +33,7 @@ layernorm: true
 # Hyperbolic
 curvature: 1.0
 residual_weight_init: 0.0
-# residual_delta_init: 2.0 # base
-residual_delta_init: 1.5 # tiny
+residual_delta_init: 1.5 # tiny: 1.5, base: 2.0
 concat_mode: direct
 compute_scores: lorentz_inner
 reset_params: xavier

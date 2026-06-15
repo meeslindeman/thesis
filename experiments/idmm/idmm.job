@@ -4,7 +4,7 @@
 #SBATCH --job-name=idmm
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=9
-#SBATCH --time=23:59:00
+#SBATCH --time=2-00:00:00
 #SBATCH --output=out/idmm/slurm_%A.out
 
 set -eo pipefail
@@ -16,6 +16,7 @@ module load Anaconda3/2024.06-1
 source activate hvit
 # idmm before main so that train_idmm.py picks up the IDMM data_utils
 export PYTHONPATH="$(pwd):$(pwd)/experiments/idmm:$(pwd)/experiments/main"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 mkdir -p out/idmm
 
@@ -52,6 +53,14 @@ fi
 LR=5e-4
 WEIGHT_DECAY=1e-3
 BATCH_SIZE=256
+# Hyperbolic model uses more GPU memory; halve the finetune batch to avoid OOM at 224/448
+if [[ "$MODEL" == "hyperbolic" ]]; then
+  FINETUNE_BATCH_SIZE=128
+  FINETUNE_BATCH_SIZE_HI=32   # 448px: 784 tokens, attention ~16x memory of 224px
+else
+  FINETUNE_BATCH_SIZE=256
+  FINETUNE_BATCH_SIZE_HI=64
+fi
 SCHEDULER=warmup_cosine
 WARMUP_EPOCHS=2        # hardcoded in paper's train script
 LABEL_SMOOTHING=0.1    # paper sets epsilon=0.1
@@ -92,14 +101,14 @@ srun python -u experiments/idmm/train_idmm.py \
   --checkpoint_dir "${CKPT_DIR}"
 
 # -------------------------
-# Stage 2: supervised fine-tuning
-# Paper: 200 epochs at 224×224 (pos embeddings interpolated from 112 checkpoint)
+# Stage 2: supervised fine-tuning at 224×224
+# Paper: 800 epochs
 # -------------------------
-FINETUNE_EPOCHS=200
+FINETUNE_EPOCHS=800
 PRETRAIN_CKPT="${CKPT_DIR}/idmm_pretrained_encoder.pt"
 
-echo "=== Stage 2: finetune ==="
-echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${FINETUNE_EPOCHS} res=224 lr=${LR} batch=${BATCH_SIZE}"
+echo "=== Stage 2: finetune 224 ==="
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=${FINETUNE_EPOCHS} res=224 lr=${LR} batch=${FINETUNE_BATCH_SIZE}"
 
 srun python -u experiments/idmm/train_idmm.py \
   --stage finetune \
@@ -110,7 +119,7 @@ srun python -u experiments/idmm/train_idmm.py \
   --epochs "${FINETUNE_EPOCHS}" \
   --lr "${LR}" \
   --weight_decay "${WEIGHT_DECAY}" \
-  --batch_size "${BATCH_SIZE}" \
+  --batch_size "${FINETUNE_BATCH_SIZE}" \
   --scheduler "${SCHEDULER}" \
   --warmup_epochs "${WARMUP_EPOCHS}" \
   --label_smoothing "${LABEL_SMOOTHING}" \
@@ -122,4 +131,40 @@ srun python -u experiments/idmm/train_idmm.py \
   --pretrain_image_size "${PRETRAIN_IMAGE_SIZE}" \
   ${CURVATURE_FLAG} \
   --pretrain_checkpoint "${PRETRAIN_CKPT}" \
+  --save_every 50 \
+  --checkpoint_dir "${CKPT_DIR}"
+
+# -------------------------
+# Stage 3: fine-tuning at 448×448
+# Paper: 100 epochs, lr=5e-5, batch=128, starting from the 224 checkpoint
+# -------------------------
+FINETUNE_CKPT="${CKPT_DIR}/idmm_finetuned_${MODEL}.pt"
+
+echo "=== Stage 3: finetune 448 ==="
+echo "MODEL=${MODEL} DATASET=${DATASET} epochs=100 res=448 lr=5e-5 batch=${FINETUNE_BATCH_SIZE_HI}"
+
+srun python -u experiments/idmm/train_idmm.py \
+  --stage finetune \
+  --model "${MODEL}" \
+  --dataset "${DATASET}" \
+  --data_dir "${DATA_DIR}" \
+  --validation_size "${VALIDATION_SIZE}" \
+  --epochs 100 \
+  --lr 5e-5 \
+  --weight_decay "${WEIGHT_DECAY}" \
+  --batch_size "${FINETUNE_BATCH_SIZE_HI}" \
+  --scheduler "${SCHEDULER}" \
+  --warmup_epochs "${WARMUP_EPOCHS}" \
+  --label_smoothing "${LABEL_SMOOTHING}" \
+  --num_hidden_layers "${NUM_HIDDEN_LAYERS}" \
+  --hidden_size "${HIDDEN_SIZE}" \
+  --num_attention_heads "${NUM_ATTENTION_HEADS}" \
+  --mlp_dim "${MLP_DIM}" \
+  --patch_size "${PATCH_SIZE}" \
+  --image_size 448 \
+  ${CURVATURE_FLAG} \
+  --pretrain_checkpoint "${FINETUNE_CKPT}" \
+  --keep_classifier \
+  --accum_steps 4 \
+  --save_every 10 \
   --checkpoint_dir "${CKPT_DIR}"

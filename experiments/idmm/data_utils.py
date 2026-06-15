@@ -98,10 +98,11 @@ def _load_splits(name: str, root: Path, train_tf, test_tf):
     return train_full, val_src, test
 
 
-def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0, train_transform=None):
+def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0, train_transform=None, image_size: int = None):
     """
     Returns ({"train": dataset, "validation": dataset, "test": dataset}, num_classes).
     Pass train_transform to override the default (e.g. MultiCropTransform for pretraining).
+    Pass image_size to override the registry default (e.g. 448 for the high-res fine-tune stage).
     """
     name = name.lower()
     if name not in DATASET_REGISTRY:
@@ -109,8 +110,9 @@ def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0, tr
 
     meta = DATASET_REGISTRY[name]
     root = Path(data_dir)
-    train_tf = train_transform if train_transform is not None else _build_transforms(meta["image_size"], train=True)
-    test_tf  = _build_transforms(meta["image_size"], train=False)
+    size = image_size if image_size is not None else meta["image_size"]
+    train_tf = train_transform if train_transform is not None else _build_transforms(size, train=True)
+    test_tf  = _build_transforms(size, train=False)
 
     train_full, val_src, test = _load_splits(name, root, train_tf, test_tf)
     num_classes = meta["num_classes"]
@@ -130,7 +132,7 @@ def get_dataset(name: str, data_dir: str = "data/", validation_size: int = 0, tr
 
 def get_dataloader(dataset, batch_size, shuffle=False, drop_last=False):
     return {
-        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, num_workers=8, pin_memory=True),
-        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False,   num_workers=4, pin_memory=True),
-        "test":       DataLoader(dataset["test"],       batch_size=256,        shuffle=False,   num_workers=4, pin_memory=True),
+        "train":      DataLoader(dataset["train"],      batch_size=batch_size, shuffle=shuffle, drop_last=drop_last, num_workers=8, pin_memory=True, persistent_workers=True),
+        "validation": DataLoader(dataset["validation"], batch_size=batch_size, shuffle=False,   num_workers=4, pin_memory=True, persistent_workers=True),
+        "test":       DataLoader(dataset["test"],       batch_size=256,        shuffle=False,   num_workers=4, pin_memory=True, persistent_workers=True),
     }

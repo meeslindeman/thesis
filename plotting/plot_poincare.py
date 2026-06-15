@@ -11,7 +11,7 @@ from matplotlib.colors import Normalize
 from pathlib import Path
 
 plt.rcParams.update({
-    "font.size":        11,
+    "font.size":        15,
     "axes.linewidth":   0.8,
 })
 

@@ -397,7 +397,7 @@ class Lorentz(nn.Module):
         # Satisfies hyperboloid constraint exactly, no logmap/expmap needed.
         x_space = x[..., 1:]
         norm_space = x_space.norm(dim=-1, keepdim=True).clamp_min(1e-9)
-        kd = k * d_new
+        kd = (k * d_new).clamp(max=80.0)
         space = (torch.sinh(kd) / (sqrt_k * norm_space)) * x_space
         return self.projx(torch.cat([torch.cosh(kd) / sqrt_k, space], dim=-1))
 
