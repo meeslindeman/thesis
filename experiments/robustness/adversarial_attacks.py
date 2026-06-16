@@ -87,7 +87,9 @@ def main():
     parser.add_argument("--batch_size", type=int, default=cfg.batch_size)
     parser.add_argument("--device", default=cfg.device)
     parser.add_argument("--epsilon", type=float, required=True, help="Perturbation magnitude")
-    parser.add_argument("--pgd_steps", type=int, default=40, help="Number of PGD iterations")
+    parser.add_argument("--pgd_steps", type=int, default=20, help="Number of PGD iterations")
+    parser.add_argument("--attacks", nargs="+", choices=["clean", "fgsm", "pgd"], default=["clean", "fgsm", "pgd"])
+    parser.add_argument("--num_samples", type=int, default=None, help="Evaluate on a subset of the test set")
     args = parser.parse_args()
 
     cfg.batch_size = args.batch_size
@@ -99,8 +101,11 @@ def main():
     device = torch.device(cfg.device)
 
     dataset, _ = get_dataset(cfg.dataset, data_dir="data/")
+    test_set = dataset["test"]
+    if args.num_samples is not None:
+        test_set = torch.utils.data.Subset(test_set, range(args.num_samples))
     testloader = torch.utils.data.DataLoader(
-        dataset["test"], batch_size=cfg.batch_size, shuffle=False, num_workers=4, pin_memory=True
+        test_set, batch_size=cfg.batch_size, shuffle=False, num_workers=4, pin_memory=True
     )
 
     model = build_model(args.model, cfg).to(device)
@@ -118,35 +123,42 @@ def main():
             f"  hyp distance  mean={m['hyp_dist_mean']:.4f}  max={m['hyp_dist_max']:.4f}"
         )
 
+    attacks = set(args.attacks)
     loss_fn = nn.CrossEntropyLoss()
-    metrics = {"clean": create_metrics(), "fgsm": create_metrics(), "pgd": create_metrics()}
+    metrics = {k: create_metrics() for k in attacks}
 
     for images, labels in tqdm(testloader, desc=f"eps={args.epsilon:.5f}"):
         images, labels = images.to(device), labels.to(device).long()
 
-        images_adv = fast_gradient_method(model_fn=model, x=images, eps=args.epsilon, norm=np.inf)
-        images_pgd = projected_gradient_descent(
-            model_fn=model, x=images, eps=args.epsilon,
-            eps_iter=args.epsilon / 4, nb_iter=args.pgd_steps, norm=np.inf,
-        )
+        if "fgsm" in attacks:
+            images_adv = fast_gradient_method(model_fn=model, x=images, eps=args.epsilon, norm=np.inf)
+        if "pgd" in attacks:
+            images_pgd = projected_gradient_descent(
+                model_fn=model, x=images, eps=args.epsilon,
+                eps_iter=args.epsilon / 10, nb_iter=args.pgd_steps, norm=np.inf,
+            )
 
         with torch.no_grad():
-            out = model(images)
-            out_adv = model(images_adv)
-            out_pgd = model(images_pgd)
+            if "clean" in attacks:
+                out = model(images)
+            if "fgsm" in attacks:
+                out_adv = model(images_adv)
+            if "pgd" in attacks:
+                out_pgd = model(images_pgd)
 
         n = images.size(0)
-        loss = loss_fn(out, labels)
-        acc1, acc5 = utils.accuracy(out, labels, topk=(1, 5))
-        update_metrics(metrics["clean"], n, loss, acc1, acc5)
-
-        loss_adv = loss_fn(out_adv, labels)
-        acc1_adv, acc5_adv = utils.accuracy(out_adv, labels, topk=(1, 5))
-        update_metrics(metrics["fgsm"], n, loss_adv, acc1_adv, acc5_adv)
-
-        loss_pgd = loss_fn(out_pgd, labels)
-        acc1_pgd, acc5_pgd = utils.accuracy(out_pgd, labels, topk=(1, 5))
-        update_metrics(metrics["pgd"], n, loss_pgd, acc1_pgd, acc5_pgd)
+        if "clean" in attacks:
+            loss = loss_fn(out, labels)
+            acc1, acc5 = utils.accuracy(out, labels, topk=(1, 5))
+            update_metrics(metrics["clean"], n, loss, acc1, acc5)
+        if "fgsm" in attacks:
+            loss_adv = loss_fn(out_adv, labels)
+            acc1_adv, acc5_adv = utils.accuracy(out_adv, labels, topk=(1, 5))
+            update_metrics(metrics["fgsm"], n, loss_adv, acc1_adv, acc5_adv)
+        if "pgd" in attacks:
+            loss_pgd = loss_fn(out_pgd, labels)
+            acc1_pgd, acc5_pgd = utils.accuracy(out_pgd, labels, topk=(1, 5))
+            update_metrics(metrics["pgd"], n, loss_pgd, acc1_pgd, acc5_pgd)
 
     print(f"\nModel: {args.model}  |  epsilon: {args.epsilon}")
     for attack, m in metrics.items():

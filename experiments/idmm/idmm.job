@@ -23,7 +23,7 @@ mkdir -p out/idmm
 # -------------------------
 # Dataset and model
 # -------------------------
-DATASET=flowers102     # flowers102 | dtd | aircrafts | cub200
+DATASET=aircrafts     # flowers102 | dtd | aircrafts | cub200
 MODEL=euclidean       # euclidean | hyperbolic
 
 # -------------------------

@@ -228,7 +228,10 @@ def main():
         evaluate_ood("SVHN", dset.SVHN(root=args.svhn_dir, split="test", transform=ood_transform, download=True))
 
     if args.places365_dir:
-        evaluate_ood("Places365", dset.ImageFolder(root=args.places365_dir, transform=ood_transform))
+        evaluate_ood("Places365", dset.Places365(
+            root=args.places365_dir, split="val", small=True,
+            transform=ood_transform, download=True,
+        ))
 
     if auroc_list:
         print("\n── Mean OOD Results ──")

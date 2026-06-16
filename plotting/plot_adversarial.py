@@ -24,13 +24,12 @@ MODEL_NAMES = {
     "hexformer":  "HexFormer",
 }
 
-_cividis = plt.colormaps["cividis"]
-_c = [_cividis(x) for x in np.linspace(0.1, 0.9, 4)]
+_cividis = plt.colormaps["plasma"]
+_c = [_cividis(x) for x in np.linspace(0.25, 0.7, 3)]
 MODEL_COLORS = {
     "euclidean":  _c[0],
     "hypercore":  _c[1],
-    "hexformer":  _c[2],
-    "hyperbolic": _c[3],
+    "hyperbolic": _c[2],
 }
 
 
@@ -86,7 +85,7 @@ def plot(path: str, output: str | None = None):
 
     ax.set_xticks(x)
     ax.set_xticklabels(groups)
-    ax.set_ylim(0, 80)
+    ax.set_ylim(0, 100)
     ax.set_xlabel("ε")
     ax.set_ylabel("Accuracy (%)")
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
