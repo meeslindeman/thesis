@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=gpu_h100
 #SBATCH --gpus=1
 #SBATCH --job-name=idmm
 #SBATCH --ntasks=1
@@ -23,8 +23,8 @@ mkdir -p out/idmm
 # -------------------------
 # Dataset and model
 # -------------------------
-DATASET=aircrafts     # flowers102 | dtd | aircrafts | cub200
-MODEL=euclidean       # euclidean | hyperbolic
+DATASET=flowers102     # flowers102 | dtd | aircrafts | cub200
+MODEL=hyperbolic       # euclidean | hyperbolic
 
 # -------------------------
 # Architecture — DeiT-Tiny/16 as in the paper
@@ -50,7 +50,7 @@ fi
 # Hyperparameters — match the paper exactly
 # AdamW, lr=5e-4, wd=1e-3, cosine decay (no warmup), batch=256
 # -------------------------
-LR=5e-4
+LR=1.5e-4   # hyperbolic lr: 0.3 * paper's 5e-4, matching ratio from vit_hyperbolic/config.yml
 WEIGHT_DECAY=1e-3
 BATCH_SIZE=256
 # Hyperbolic model uses more GPU memory; halve the finetune batch to avoid OOM at 224/448
@@ -150,7 +150,7 @@ srun python -u experiments/idmm/train_idmm.py \
   --data_dir "${DATA_DIR}" \
   --validation_size "${VALIDATION_SIZE}" \
   --epochs 100 \
-  --lr 5e-5 \
+  --lr 1.5e-5 \
   --weight_decay "${WEIGHT_DECAY}" \
   --batch_size "${FINETUNE_BATCH_SIZE_HI}" \
   --scheduler "${SCHEDULER}" \

@@ -15,23 +15,18 @@ plt.rcParams.update({
     "axes.linewidth":   0.8,
 })
 
-DATASETS = {
-    "cifar10": {
-        "num_classes": 10,
-        "mean": (0.49139968, 0.48215841, 0.44653091),
-        "std":  (0.24703223, 0.24348513, 0.26158784),
-    },
-    "cifar100": {
-        "num_classes": 100,
-        "mean": (0.50707516, 0.48654887, 0.44091784),
-        "std":  (0.26733429, 0.25643846, 0.27615047),
-    },
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD  = (0.228, 0.224, 0.225)
+
+NORM_STATS = {
+    "cifar10":  {"mean": (0.49139968, 0.48215841, 0.44653091), "std": (0.24703223, 0.24348513, 0.26158784)},
+    "cifar100": {"mean": (0.50707516, 0.48654887, 0.44091784), "std": (0.26733429, 0.25643846, 0.27615047)},
 }
 
 
 # ── helpers (adapted from plot_hyperbolic.py) ────────────────────────────────
 
-def extract_config(ckpt, state):
+def extract_config(ckpt):
     if "config" in ckpt:
         cfg = ckpt["config"]
         return {
@@ -46,6 +41,7 @@ def extract_config(ckpt, state):
             "final_op":            cfg.get("final_op", "cls"),
             "use_weight_norm":     cfg.get("use_weight_norm", False),
             "curvature":           cfg.get("curvature", 1.0),
+            "dataset":             cfg.get("dataset"),
         }
     raise KeyError("No 'config' key in checkpoint.")
 
@@ -83,10 +79,10 @@ def get_loader(dataset: str, data_dir: str, batch_size: int = 256):
     import torchvision
     import torchvision.transforms as T
 
-    cfg = DATASETS[dataset]
-    tf  = T.Compose([T.ToTensor(), T.Normalize(cfg["mean"], cfg["std"])])
-    cls = torchvision.datasets.CIFAR10 if dataset == "cifar10" else torchvision.datasets.CIFAR100
-    ds  = cls(data_dir, train=False, download=True, transform=tf)
+    stats = NORM_STATS.get(dataset, {"mean": _IMAGENET_MEAN, "std": _IMAGENET_STD})
+    tf    = T.Compose([T.ToTensor(), T.Normalize(stats["mean"], stats["std"])])
+    cls   = torchvision.datasets.CIFAR10 if dataset == "cifar10" else torchvision.datasets.CIFAR100
+    ds    = cls(data_dir, train=False, download=True, transform=tf)
     return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=4)
 
 
@@ -142,7 +138,8 @@ def draw_mlr_arc(ax, z_2d, a_val, k=1.0, **kwargs):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("checkpoint")
-    parser.add_argument("--dataset",       required=True, choices=list(DATASETS))
+    parser.add_argument("--dataset",       default=None,
+                        help="Dataset name (default: read from checkpoint config)")
     parser.add_argument("--data-dir",      default="data/")
     parser.add_argument("--output",        default=None)
     parser.add_argument("--device",        default="cpu")
@@ -164,18 +161,22 @@ def main():
 
     ckpt  = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     state = ckpt["model"]
-    cfg   = extract_config(ckpt, state)
+    cfg   = extract_config(ckpt)
     num_classes = cfg["num_classes"]
     n_show = args.n_classes or num_classes
 
-    print(f"Checkpoint: epoch={ckpt.get('epoch')}  acc={ckpt.get('acc')}")
+    dataset = args.dataset or cfg.get("dataset")
+    if dataset is None:
+        sys.exit("Could not determine dataset — pass --dataset or ensure the checkpoint has a 'config.dataset' field.")
+
+    print(f"Checkpoint: epoch={ckpt.get('epoch')}  acc={ckpt.get('acc')}  dataset={dataset}")
 
     model = build_model(state, cfg)
     dev   = torch.device("cuda" if args.device in ("gpu", "cuda") else args.device)
     model = model.to(dev)
 
     print("Loading data...")
-    loader = get_loader(args.dataset, args.data_dir)
+    loader = get_loader(dataset, args.data_dir)
 
     print(f"Extracting representations (max {args.max_samples})...")
     reps, labels = extract_reps(model, loader, dev, max_samples=args.max_samples)
@@ -183,6 +184,9 @@ def main():
     # Poincaré radius from Lorentz coordinates
     s_np     = reps[:, 1:].numpy()
     r_actual = np.linalg.norm(s_np / (1.0 + reps[:, :1].numpy()), axis=1)
+
+    print(f"Mean radius: {r_actual.mean():.4f}  Std: {r_actual.std():.4f}"
+          f"  (min={r_actual.min():.4f}  max={r_actual.max():.4f})")
 
     # Clip near-boundary points for numerical stability
     CLIP_R  = 0.97
@@ -227,7 +231,7 @@ def main():
     rng    = np.random.default_rng(42)
     labs   = labels.numpy()
     shown  = sorted(rng.choice(num_classes, size=min(n_show, num_classes), replace=False).tolist())
-    cmap   = plt.cm.plasma
+    cmap   = plt.cm.viridis
     norm   = Normalize(vmin=0, vmax=num_classes - 1)
 
     # ── plot ──────────────────────────────────────────────────────────────────
@@ -242,8 +246,8 @@ def main():
         cbar = fig.colorbar(sm, ax=target_ax, fraction=0.04, pad=0.02)
         cbar.set_label("Class")
         cbar.ax.yaxis.set_tick_params(length=2)
-        if num_classes <= 20:
-            cbar.set_ticks(range(num_classes))
+        if len(shown) <= 20:
+            cbar.set_ticks(shown)
 
     # ── Poincaré disk ─────────────────────────────────────────────────────────
     ax.add_patch(Circle((0, 0), 1.0, fill=False, edgecolor="black", linewidth=1.0, zorder=10))

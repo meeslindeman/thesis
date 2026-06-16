@@ -24,7 +24,7 @@ MODEL_DIRS = {
     "hyperbolic": REPO_ROOT / "vit_hyperbolic",
 }
 _IMAGENET_MEAN = [0.485, 0.456, 0.406]
-_IMAGENET_STD  = [0.229, 0.224, 0.225]
+_IMAGENET_STD  = [0.228, 0.224, 0.225]
 
 
 # ---------------------------------------------------------------------------
@@ -180,33 +180,35 @@ class NaNLossAbort(Exception):
     pass
 
 
-def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, label_smoothing: float, n_global_crops: int = 2):
+def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, n_global_crops: int = 2):
     """
     Instance discrimination over all crops.
-    CutMix is applied only to global crops (matching the paper's code);
-    local crops use plain CE. Gradients are accumulated across all crops
-    before each optimizer step, keeping peak memory at one crop-batch at a time.
+    CutMix is applied to all crops (matching the paper's code).
+    Loss is averaged within each group (global/local) then summed,
+    so global and local crops contribute equally — matching the paper.
     """
     model.train()
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    loss_fn = nn.CrossEntropyLoss()
     total_loss = 0.0
 
     for crops, _, instance_idx in loader:
         instance_idx = instance_idx.to(device, non_blocking=True).long()
         n_crops = len(crops)
+        n_local = n_crops - n_global_crops
 
         optimizer.zero_grad(set_to_none=True)
         batch_loss = 0.0
 
         for i, crop in enumerate(crops):
             crop = crop.to(device, non_blocking=True)
-            if use_cutmix and i < n_global_crops:
+            n_group = n_global_crops if i < n_global_crops else n_local
+            if use_cutmix:
                 crop, idx_a, idx_b, lam = cutmix_batch(crop, instance_idx)
                 logits = model(crop)
-                loss = (lam * loss_fn(logits, idx_a) + (1 - lam) * loss_fn(logits, idx_b)) / n_crops
+                loss = (lam * loss_fn(logits, idx_a) + (1 - lam) * loss_fn(logits, idx_b)) / n_group
             else:
                 logits = model(crop)
-                loss = loss_fn(logits, instance_idx) / n_crops
+                loss = loss_fn(logits, instance_idx) / n_group
             loss.backward()
             batch_loss += loss.item()
 
@@ -420,7 +422,6 @@ def main():
             train_loss = pretrain_one_epoch(
                 model, trainloader, optimizer, device,
                 use_cutmix=args.use_cutmix,
-                label_smoothing=cfg.label_smoothing,
                 n_global_crops=args.n_global_crops,
             )
             if scheduler is not None:

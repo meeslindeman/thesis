@@ -174,7 +174,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=cfg.batch_size)
     parser.add_argument("--device", default=cfg.device)
     parser.add_argument("--textures_dir", default=None, help="DTD Textures root (ImageFolder layout)")
-    parser.add_argument("--svhn_dir", default="data/ood/svhn", help="SVHN root; downloaded automatically on first run")
+    parser.add_argument("--svhn_dir", default=None, help="SVHN root; downloaded automatically on first run")
     parser.add_argument("--places365_dir", default=None, help="Places365 root (ImageFolder layout)")
     args = parser.parse_args()
 
@@ -230,7 +230,7 @@ def main():
     if args.places365_dir:
         evaluate_ood("Places365", dset.Places365(
             root=args.places365_dir, split="val", small=True,
-            transform=ood_transform, download=True,
+            transform=ood_transform, download=False,
         ))
 
     if auroc_list:

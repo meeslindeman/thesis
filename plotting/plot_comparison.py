@@ -9,7 +9,7 @@ MODEL_ORDER = ["euclidean", "hypercore", "hexformer", "hyperbolic"]
 import matplotlib.cm as cm
 import numpy as np
 
-_viridis = cm._colormaps["plasma"]
+_viridis = cm._colormaps["viridis"]
 _c = [_viridis(x) for x in np.linspace(0.2, 0.8, 4)]
 
 MODEL_COLORS = {
