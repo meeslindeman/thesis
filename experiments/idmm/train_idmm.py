@@ -305,9 +305,15 @@ def load_pretrained_encoder(model, checkpoint_path: str, cfg, device, keep_class
         old_n = pos_weights.shape[1]
         new_n = (cfg.image_size // cfg.patch_size) ** 2
         if old_n != new_n:
-            # Separate CLS token (first position) from patch tokens before interpolating
-            cls_pos = pos_weights[:, :1, :]
-            patch_pos = pos_weights[:, 1:, :]
+            # Detect CLS: old_n is a perfect square → no CLS (pooling mode); otherwise has CLS
+            _side = int(round(old_n ** 0.5))
+            has_cls = (_side * _side != old_n)
+            if has_cls:
+                cls_pos = pos_weights[:, :1, :]
+                patch_pos = pos_weights[:, 1:, :]
+            else:
+                cls_pos = None
+                patch_pos = pos_weights
             old_patch_n = patch_pos.shape[1]
             old_side = int(round(old_patch_n ** 0.5))
             new_side = cfg.image_size // cfg.patch_size
@@ -315,7 +321,10 @@ def load_pretrained_encoder(model, checkpoint_path: str, cfg, device, keep_class
             pos = patch_pos.reshape(1, old_side, old_side, D).permute(0, 3, 1, 2).float()
             pos = F.interpolate(pos, size=(new_side, new_side), mode='bicubic', align_corners=False)
             patch_pos = pos.permute(0, 2, 3, 1).reshape(1, new_side * new_side, D)
-            pos_weights = torch.cat([cls_pos.to(patch_pos.dtype), patch_pos], dim=1)
+            if has_cls:
+                pos_weights = torch.cat([cls_pos.to(patch_pos.dtype), patch_pos], dim=1)
+            else:
+                pos_weights = patch_pos
             print(f"Interpolated position embeddings: {old_patch_n} → {new_side*new_side} tokens ({old_side}×{old_side} → {new_side}×{new_side})")
 
     missing, unexpected = model.load_state_dict(encoder_state, strict=False)

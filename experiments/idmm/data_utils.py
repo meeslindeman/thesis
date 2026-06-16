@@ -1,16 +1,18 @@
 """
 Data utilities for IDMM experiments (small datasets).
-All datasets download automatically via torchvision.
+Most datasets download automatically via torchvision; CUB-200-2011 must be
+placed manually at data/CUB_200_2011/ (download from https://www.vision.caltech.edu/datasets/cub_200_2011/).
 
 Training splits follow the paper (Table 1):
   flowers102 — train+val (2040),  test (6149)
-  pets       — trainval  (3680),  test (3669)
   dtd        — train+val (3760),  test (1880)
   aircrafts  — trainval  (6667),  test (3333)
+  cub200     — train     (5994),  test (5794)
 """
 
 import torch
 from pathlib import Path
+from PIL import Image
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 from torchvision import transforms
 
@@ -20,10 +22,54 @@ _IMAGENET_STD  = [0.229, 0.224, 0.225]
 
 DATASET_REGISTRY = {
     "flowers102": {"image_size": 224, "num_classes": 102},
-    "pets":       {"image_size": 224, "num_classes": 37},
     "dtd":        {"image_size": 224, "num_classes": 47},
     "aircrafts":  {"image_size": 224, "num_classes": 100},
+    "cub200":     {"image_size": 224, "num_classes": 200},
 }
+
+
+class CUB200(Dataset):
+    """CUB-200-2011 fine-grained bird classification dataset.
+    Expects the standard extracted layout at root/CUB_200_2011/.
+    Labels are 0-indexed (original files use 1-indexed class ids).
+    """
+    def __init__(self, root: Path, train: bool = True, transform=None):
+        self.root = Path(root) / "CUB_200_2011"
+        self.transform = transform
+
+        images = {}
+        with open(self.root / "images.txt") as f:
+            for line in f:
+                img_id, fname = line.strip().split()
+                images[int(img_id)] = fname
+
+        splits = {}
+        with open(self.root / "train_test_split.txt") as f:
+            for line in f:
+                img_id, is_train = line.strip().split()
+                splits[int(img_id)] = int(is_train)
+
+        labels = {}
+        with open(self.root / "image_class_labels.txt") as f:
+            for line in f:
+                img_id, class_id = line.strip().split()
+                labels[int(img_id)] = int(class_id) - 1
+
+        self.samples = [
+            (self.root / "images" / images[img_id], labels[img_id])
+            for img_id, is_train in sorted(splits.items())
+            if bool(is_train) == train
+        ]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+        img = Image.open(path).convert("RGB")
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, label
 
 
 def _build_transforms(size: int, train: bool):
@@ -65,13 +111,6 @@ def _load_splits(name: str, root: Path, train_tf, test_tf):
         ])
         test = Flowers102(root, split="test", transform=test_tf, download=False)
 
-    elif name == "pets":
-        from torchvision.datasets import OxfordIIITPet
-        # trainval = 3680 as in the paper
-        train_full = OxfordIIITPet(root, split="trainval", transform=train_tf, download=True)
-        val_src    = OxfordIIITPet(root, split="trainval", transform=test_tf,  download=False)
-        test       = OxfordIIITPet(root, split="test",     transform=test_tf,  download=False)
-
     elif name == "dtd":
         from torchvision.datasets import DTD
         # train (1880) + val (1880) = 3760 as in the paper
@@ -91,6 +130,12 @@ def _load_splits(name: str, root: Path, train_tf, test_tf):
         train_full = FGVCAircraft(root, split="trainval", transform=train_tf, download=True)
         val_src    = FGVCAircraft(root, split="trainval", transform=test_tf,  download=False)
         test       = FGVCAircraft(root, split="test",     transform=test_tf,  download=False)
+
+    elif name == "cub200":
+        # train=5994, test=5794; no official val split
+        train_full = CUB200(root, train=True,  transform=train_tf)
+        val_src    = CUB200(root, train=True,  transform=test_tf)
+        test       = CUB200(root, train=False, transform=test_tf)
 
     else:
         raise ValueError(f"Unknown dataset '{name}'. Available: {list(DATASET_REGISTRY)}")

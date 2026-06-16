@@ -1,9 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import math
 from vit_hyperbolic.linear import LorentzFullyConnected
-from vit_hyperbolic.blocks.dropout import IntrinsicDropout
 
 
 class LorentzPatchEmbeddings(nn.Module):
@@ -55,25 +52,29 @@ class LorentzEmbeddings(nn.Module):
         self.manifold = config["manifold"]
 
         if self.final_op == "cls":
-            self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"] + 1))
-            n_tokens = self.patch_embeddings.num_patches + 1
+            self.cls_space = nn.Parameter(
+                torch.randn(1, 1, config["hidden_size"]) / config["hidden_size"]**0.5
+            )
         elif self.final_op == "pooling":
             self.cls_token = None
             n_tokens = self.patch_embeddings.num_patches
         else:
             raise ValueError(f"Invalid final_op: {self.final_op}. Must be 'cls' or 'pooling'.")
 
-        pos = torch.randn(1, n_tokens, config["hidden_size"]) / config["hidden_size"]**0.5
+        pos = torch.randn(1, self.patch_embeddings.num_patches, config["hidden_size"]) \
+          / config["hidden_size"]**0.5
         self.pos_space = nn.Parameter(pos)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embeddings(x)
         batch_size = x.shape[0]
 
-        if self.final_op == "cls":
-            cls = self.cls_token.expand(batch_size, -1, -1)
-            x = torch.cat((cls, x), dim=1)
-
         pos_lor = self.manifold.expmap_origin(self.pos_space)
         x = self.manifold.gyro_add(x, pos_lor)
+
+        if self.final_op == "cls":
+            cls_lor = self.manifold.expmap_origin(self.cls_space)
+            cls = cls_lor.expand(batch_size, -1, -1)      # [B, 1, d+1]
+            x = torch.cat((cls, x), dim=1)                # [B, N+1, d+1]
+            
         return x
