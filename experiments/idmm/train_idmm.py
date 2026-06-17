@@ -212,6 +212,7 @@ def pretrain_one_epoch(model, loader, optimizer, device, use_cutmix: bool, n_glo
             loss.backward()
             batch_loss += loss.item()
 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         total_loss += batch_loss * instance_idx.size(0)
 
@@ -418,6 +419,9 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         scheduler = build_scheduler(cfg, optimizer)
 
+        ema_decay = 0.999
+        ema_state = {k: v.clone().detach() for k, v in vit.state_dict().items()}
+
         for epoch in range(cfg.epochs):
             train_loss = pretrain_one_epoch(
                 model, trainloader, optimizer, device,
@@ -426,13 +430,17 @@ def main():
             )
             if scheduler is not None:
                 scheduler.step()
+            with torch.no_grad():
+                for k, v in vit.state_dict().items():
+                    ema_state[k].mul_(ema_decay).add_(v, alpha=1 - ema_decay)
             print(f"Epoch: {epoch + 1}, Pretrain loss: {train_loss:.4f}")
 
         if args.checkpoint_dir is not None:
             ckpt_path = Path(args.checkpoint_dir) / "idmm_pretrained_encoder.pt"
             ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+            vit.load_state_dict(ema_state)
             torch.save({"model": vit.state_dict()}, ckpt_path)
-            print(f"Saved pretrained encoder: {ckpt_path}")
+            print(f"Saved pretrained encoder (EMA): {ckpt_path}")
 
     elif args.stage == "finetune":
         # Build model at full resolution (224×224); positional embeddings are interpolated on load

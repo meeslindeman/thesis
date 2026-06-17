@@ -152,12 +152,22 @@ def _build_transforms(meta, train: bool, augmentation: str = "simple"):
             transforms.Normalize(meta["mean"], meta["std"]),
             transforms.RandomErasing(p=0.25, scale=(0.02, 0.4), ratio=(0.3, 3.3), value=meta["mean"]),
         ])
-    return transforms.Compose([
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomCrop(size, padding=size // 8),
-        transforms.ToTensor(),
-        transforms.Normalize(meta["mean"], meta["std"]),
-    ])
+    if size == 32:
+        return transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(size, padding=size // 8),
+            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(meta["mean"], meta["std"]),
+        ])
+    else:
+        return transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(size, padding=4),
+            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(meta["mean"], meta["std"])
+        ])
 
 
 def get_dataset(name, data_dir="data/", validation_size=5000, augmentation="simple"):

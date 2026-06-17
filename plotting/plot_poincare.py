@@ -19,8 +19,9 @@ _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD  = (0.228, 0.224, 0.225)
 
 NORM_STATS = {
-    "cifar10":  {"mean": (0.49139968, 0.48215841, 0.44653091), "std": (0.24703223, 0.24348513, 0.26158784)},
-    "cifar100": {"mean": (0.50707516, 0.48654887, 0.44091784), "std": (0.26733429, 0.25643846, 0.27615047)},
+    "cifar10":        {"mean": (0.49139968, 0.48215841, 0.44653091), "std": (0.24703223, 0.24348513, 0.26158784)},
+    "cifar100":       {"mean": (0.50707516, 0.48654887, 0.44091784), "std": (0.26733429, 0.25643846, 0.27615047)},
+    "tiny_imagenet":  {"mean": (0.4802, 0.4481, 0.3975),             "std": (0.2302, 0.2265, 0.2262)},
 }
 
 
@@ -81,9 +82,20 @@ def get_loader(dataset: str, data_dir: str, batch_size: int = 256):
 
     stats = NORM_STATS.get(dataset, {"mean": _IMAGENET_MEAN, "std": _IMAGENET_STD})
     tf    = T.Compose([T.ToTensor(), T.Normalize(stats["mean"], stats["std"])])
-    cls   = torchvision.datasets.CIFAR10 if dataset == "cifar10" else torchvision.datasets.CIFAR100
-    ds    = cls(data_dir, train=False, download=True, transform=tf)
-    return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=4)
+
+    if dataset == "cifar10":
+        ds = torchvision.datasets.CIFAR10(data_dir, train=False, download=True, transform=tf)
+    elif dataset == "cifar100":
+        ds = torchvision.datasets.CIFAR100(data_dir, train=False, download=True, transform=tf)
+    elif dataset == "tiny_imagenet":
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, os.path.join(repo_root, "experiments", "main"))
+        from data_utils import TinyImageNet
+        ds = TinyImageNet(data_dir, train=False, transform=tf)
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset!r}")
+
+    return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=4)
 
 
 @torch.no_grad()
@@ -178,8 +190,9 @@ def main():
     print("Loading data...")
     loader = get_loader(dataset, args.data_dir)
 
-    print(f"Extracting representations (max {args.max_samples})...")
-    reps, labels = extract_reps(model, loader, dev, max_samples=args.max_samples)
+    effective_max = max(args.max_samples, args.pts_per_class * num_classes)
+    print(f"Extracting representations (max {effective_max})...")
+    reps, labels = extract_reps(model, loader, dev, max_samples=effective_max)
 
     # Poincaré radius from Lorentz coordinates
     s_np     = reps[:, 1:].numpy()
@@ -228,11 +241,14 @@ def main():
         V_2d_unit = V_2d / np.linalg.norm(V_2d, axis=0, keepdims=True).clip(1e-9)
 
     # Select classes
-    rng    = np.random.default_rng(42)
-    labs   = labels.numpy()
-    shown  = sorted(rng.choice(num_classes, size=min(n_show, num_classes), replace=False).tolist())
-    cmap   = plt.cm.viridis
-    norm   = Normalize(vmin=0, vmax=num_classes - 1)
+    rng       = np.random.default_rng(42)
+    labs      = labels.numpy()
+    shown     = sorted(rng.choice(num_classes, size=min(n_show, num_classes), replace=False).tolist())
+    cmap      = plt.cm.viridis
+    # Map shown classes to evenly-spaced positions 0..n-1 so colors never overlap
+    color_norm = Normalize(vmin=0, vmax=len(shown) - 1)
+    color_idx  = {c: i for i, c in enumerate(shown)}
+    def cc(c): return cmap(color_norm(color_idx[c]))
 
     # ── plot ──────────────────────────────────────────────────────────────────
     if args.tangent:
@@ -241,13 +257,14 @@ def main():
         fig, ax = plt.subplots(figsize=(5, 5))
 
     def add_colorbar(target_ax):
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=color_norm)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=target_ax, fraction=0.04, pad=0.02)
         cbar.set_label("Class")
         cbar.ax.yaxis.set_tick_params(length=2)
         if len(shown) <= 20:
-            cbar.set_ticks(shown)
+            cbar.set_ticks(range(len(shown)))
+            cbar.set_ticklabels([str(c) for c in shown])
 
     # ── Poincaré disk ─────────────────────────────────────────────────────────
     ax.add_patch(Circle((0, 0), 1.0, fill=False, edgecolor="black", linewidth=1.0, zorder=10))
@@ -256,14 +273,14 @@ def main():
         for c in shown:
             a_c = float(a_vals[c]) if c < len(a_vals) else 0.0
             draw_mlr_arc(ax, V_2d_unit[:, c], a_c, k=k_val,
-                         color=cmap(norm(c)), linewidth=0.8, alpha=0.5, zorder=4)
+                         color=cc(c), linewidth=0.8, alpha=0.5, zorder=4)
 
     for c in shown:
         idx = np.where(labs == c)[0]
         if len(idx) > args.pts_per_class:
             idx = rng.choice(idx, size=args.pts_per_class, replace=False)
         ax.scatter(poincare[idx, 0], poincare[idx, 1],
-                   s=6, alpha=0.75, color=cmap(norm(c)), linewidths=0, zorder=5)
+                   s=6, alpha=0.75, color=cc(c), linewidths=0, zorder=5)
 
     ax.set_xlim(-1.0, 1.0)
     ax.set_ylim(-1.0, 1.0)
@@ -284,7 +301,7 @@ def main():
             if len(idx) > args.pts_per_class:
                 idx = rng.choice(idx, size=args.pts_per_class, replace=False)
             ax_t.scatter(coords2d[idx, 0], coords2d[idx, 1],
-                         s=6, alpha=0.75, color=cmap(norm(c)), linewidths=0)
+                         s=6, alpha=0.75, color=cc(c), linewidths=0)
             
         lim = np.max(np.abs(coords2d).max() * 1.05)
         ax_t.set_xlim(-lim, lim)
