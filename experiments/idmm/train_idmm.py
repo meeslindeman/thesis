@@ -474,6 +474,9 @@ def main():
 
         resume_path = Path(args.checkpoint_dir) / "finetune_resume.pt" if args.checkpoint_dir else None
 
+        best_acc = 0.0
+        best_state = None
+
         for epoch in range(start_epoch, cfg.epochs):
             try:
                 train_loss, train_acc = finetune_one_epoch(vit, trainloader, optimizer, loss_fn, device, epoch, accum_steps=args.accum_steps)
@@ -490,6 +493,9 @@ def main():
                 f"Train loss: {train_loss:.4f}, Train accuracy: {train_acc:.4f}, "
                 f"Test loss: {test_loss:.4f}, Test accuracy: {acc:.4f}"
             )
+            if acc > best_acc:
+                best_acc = acc
+                best_state = {k: v.clone() for k, v in vit.state_dict().items()}
             if resume_path is not None and args.save_every > 0 and (epoch + 1) % args.save_every == 0:
                 resume_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save({
@@ -503,8 +509,8 @@ def main():
         if args.checkpoint_dir is not None:
             ckpt_path = Path(args.checkpoint_dir) / f"idmm_finetuned_{args.model}.pt"
             ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"model": vit.state_dict()}, ckpt_path)
-            print(f"Saved finetuned model: {ckpt_path}")
+            torch.save({"model": best_state}, ckpt_path)
+            print(f"Saved finetuned model (best acc={best_acc:.4f}): {ckpt_path}")
 
     total_time = time.perf_counter() - run_start
     print(f"Total training time: {total_time:.2f}s ({total_time / 60:.2f} min)")

@@ -95,7 +95,9 @@ def get_loader(dataset: str, data_dir: str, batch_size: int = 256):
     else:
         raise ValueError(f"Unsupported dataset: {dataset!r}")
 
-    return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=4)
+    g = torch.Generator()
+    g.manual_seed(42)
+    return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=4, generator=g)
 
 
 @torch.no_grad()
@@ -157,29 +159,28 @@ def main():
     parser.add_argument("--device",        default="cpu")
     parser.add_argument("--n-classes",     type=int, default=None,
                         help="Classes to show (default: all)")
-    parser.add_argument("--pts-per-class", type=int, default=50)
-    parser.add_argument("--max-samples",   type=int, default=2000)
     parser.add_argument("--no-classifiers", dest="classifiers", action="store_false",
                         help="Hide geodesic classifier boundaries")
-    parser.add_argument("--tangent", action="store_true",
-                        help="Add tangent space panel alongside Poincaré disk")
+    parser.add_argument("--umap", action="store_true",
+                        help="Use UMAP (output_metric=hyperboloid) instead of TangentPCA")
     args = parser.parse_args()
-
-    try:
-        from geomstats.geometry.hyperboloid import Hyperboloid
-        from geomstats.learning.pca import TangentPCA
-    except ImportError:
-        sys.exit("geomstats not found — install with:  pip install geomstats")
 
     ckpt  = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     state = ckpt["model"]
     cfg   = extract_config(ckpt)
     num_classes = cfg["num_classes"]
-    n_show = args.n_classes or num_classes
 
     dataset = args.dataset or cfg.get("dataset")
     if dataset is None:
         sys.exit("Could not determine dataset — pass --dataset or ensure the checkpoint has a 'config.dataset' field.")
+
+    if dataset == "cifar100":
+        n_show_default = 100
+    elif dataset == "tiny_imagenet":
+        n_show_default = 200
+    else:
+        n_show_default = num_classes
+    n_show = args.n_classes or n_show_default
 
     print(f"Checkpoint: epoch={ckpt.get('epoch')}  acc={ckpt.get('acc')}  dataset={dataset}")
 
@@ -190,9 +191,8 @@ def main():
     print("Loading data...")
     loader = get_loader(dataset, args.data_dir)
 
-    effective_max = max(args.max_samples, args.pts_per_class * num_classes)
-    print(f"Extracting representations (max {effective_max})...")
-    reps, labels = extract_reps(model, loader, dev, max_samples=effective_max)
+    print("Extracting representations (full test set)...")
+    reps, labels = extract_reps(model, loader, dev, max_samples=None)
 
     # Poincaré radius from Lorentz coordinates
     s_np     = reps[:, 1:].numpy()
@@ -212,16 +212,38 @@ def main():
         reps_np[mask, 0]  = t_c
         reps_np[mask, 1:] = s_c[mask].astype(np.float64)
 
-    print("Fitting TangentPCA...")
-    space    = Hyperboloid(dim=cfg["hidden_size"])
-    tpca     = TangentPCA(space=space, n_components=2)
-    coords2d = tpca.fit_transform(reps_np)
-
-    tangent_dir = coords2d / np.linalg.norm(coords2d, axis=1, keepdims=True).clip(1e-9)
-    poincare    = r_actual[:, None] * tangent_dir
+    if args.umap:
+        try:
+            import umap as umap_lib
+            from sklearn.decomposition import PCA
+        except ImportError:
+            sys.exit("umap-learn and scikit-learn are required — pip install umap-learn scikit-learn")
+        import warnings
+        print("Pre-processing with PCA (50 components)...")
+        pre = PCA(n_components=50, random_state=42).fit_transform(reps_np)
+        print("Running UMAP (output_metric=hyperboloid)...")
+        reducer  = umap_lib.UMAP(n_components=2, output_metric="hyperboloid", n_jobs=1, random_state=42)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="umap")
+            emb2d = reducer.fit_transform(pre).astype(np.float64)
+        t_coord  = np.sqrt(1.0 + np.sum(emb2d ** 2, axis=1, keepdims=True))
+        poincare = emb2d / (1.0 + t_coord)
+        tpca     = None
+    else:
+        try:
+            from geomstats.geometry.hyperboloid import Hyperboloid
+            from geomstats.learning.pca import TangentPCA
+        except ImportError:
+            sys.exit("geomstats not found — install with:  pip install geomstats")
+        print("Fitting TangentPCA...")
+        space    = Hyperboloid(dim=cfg["hidden_size"])
+        tpca     = TangentPCA(space=space, n_components=2)
+        coords2d = tpca.fit_transform(reps_np)
+        norm2d   = np.linalg.norm(coords2d, axis=1, keepdims=True).clip(1e-9)
+        poincare = np.tanh(norm2d / 2) * (coords2d / norm2d)
 
     # Classifier weight vectors projected to 2D PCA basis
-    if args.classifiers:
+    if args.classifiers and not args.umap:
         clf = model.classifier
         if hasattr(clf, "create_spacelike_vector"):
             V_full = clf.create_spacelike_vector().detach().cpu().numpy()
@@ -251,22 +273,29 @@ def main():
     def cc(c): return cmap(color_norm(color_idx[c]))
 
     # ── plot ──────────────────────────────────────────────────────────────────
-    if args.tangent:
-        fig, (ax, ax_t) = plt.subplots(1, 2, figsize=(10, 5))
-    else:
-        fig, ax = plt.subplots(figsize=(5, 5))
+    fig, (ax, ax_r) = plt.subplots(1, 2, figsize=(10, 5))
 
-    def add_colorbar(target_ax):
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=color_norm)
-        sm.set_array([])
-        cbar = fig.colorbar(sm, ax=target_ax, fraction=0.04, pad=0.02)
-        cbar.set_label("Class")
-        cbar.ax.yaxis.set_tick_params(length=2)
-        if len(shown) <= 20:
-            cbar.set_ticks(range(len(shown)))
-            cbar.set_ticklabels([str(c) for c in shown])
+    def add_colorbars():
+        fig.tight_layout(w_pad=3.5)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        fig_bb   = fig.get_window_extent(renderer)
+        for target_ax in (ax, ax_r):
+            ax_bb = target_ax.get_window_extent(renderer)
+            x0 = (ax_bb.x1 - fig_bb.x0) / fig_bb.width + 0.008
+            y0 = (ax_bb.y0 - fig_bb.y0) / fig_bb.height
+            h  = ax_bb.height / fig_bb.height
+            cax  = fig.add_axes([x0, y0, 0.015, h])
+            sm   = plt.cm.ScalarMappable(cmap=cmap, norm=color_norm)
+            sm.set_array([])
+            cbar = fig.colorbar(sm, cax=cax)
+            cbar.ax.yaxis.set_tick_params(length=2, labelsize=9)
+            if len(shown) <= 20:
+                cbar.set_ticks(range(len(shown)))
+                cbar.set_ticklabels([str(c) for c in shown])
 
     # ── Poincaré disk ─────────────────────────────────────────────────────────
+    ax.set_title("Poincaré Ball", fontsize=plt.rcParams["font.size"])
     ax.add_patch(Circle((0, 0), 1.0, fill=False, edgecolor="black", linewidth=1.0, zorder=10))
 
     if args.classifiers:
@@ -277,8 +306,6 @@ def main():
 
     for c in shown:
         idx = np.where(labs == c)[0]
-        if len(idx) > args.pts_per_class:
-            idx = rng.choice(idx, size=args.pts_per_class, replace=False)
         ax.scatter(poincare[idx, 0], poincare[idx, 1],
                    s=6, alpha=0.75, color=cc(c), linewidths=0, zorder=5)
 
@@ -292,33 +319,22 @@ def main():
     ax.tick_params(direction="in", length=3)
     for spine in ax.spines.values():
         spine.set_visible(True)
-    add_colorbar(ax)
 
-    # ── Tangent space panel ───────────────────────────────────────────────────
-    if args.tangent:
-        for c in shown:
-            idx = np.where(labs == c)[0]
-            if len(idx) > args.pts_per_class:
-                idx = rng.choice(idx, size=args.pts_per_class, replace=False)
-            ax_t.scatter(coords2d[idx, 0], coords2d[idx, 1],
-                         s=6, alpha=0.75, color=cc(c), linewidths=0)
-            
-        lim = np.max(np.abs(coords2d).max() * 1.05)
-        ax_t.set_xlim(-lim, lim)
-        ax_t.set_ylim(-lim, lim)
-        ax_t.set_aspect("equal", adjustable="box")
-        ax_t.set_xlabel("$z_0$")
-        ax_t.set_ylabel("$z_1$")
-        ax_t.tick_params(direction="in", length=3)
-        for spine in ax_t.spines.values():
-            spine.set_visible(True)
-        add_colorbar(ax_t)
+    # ── Radius histogram ──────────────────────────────────────────────────────
+    ax_r.set_title("Radius Distribution", fontsize=plt.rcParams["font.size"])
+    for c in shown:
+        idx = np.where(labs == c)[0]
+        ax_r.hist(r_actual[idx], bins=20, density=True, histtype="step", color=cc(c), linewidth=0.8)
+    ax_r.set_xlim(0.5, 1.0)
+    ax_r.set_xlabel("Poincaré radius $r$")
+    ax_r.set_box_aspect(1)
+    ax_r.tick_params(direction="in", length=3)
 
-    fig.tight_layout()
+    add_colorbars()
 
     plots_dir = Path("plotting/plots")
     plots_dir.mkdir(parents=True, exist_ok=True)
-    out = args.output or str(plots_dir / f"poincare_{args.dataset}.pdf")
+    out = args.output or str(plots_dir / f"poincare_{dataset}.pdf")
     fig.savefig(out, bbox_inches="tight")
     print(f"Saved → {out}")
 

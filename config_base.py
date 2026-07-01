@@ -10,6 +10,7 @@ DATASET_CONFIGS = {
     "pets": {"image_size": 224, "num_classes": 37, "num_channels": 3},
     "dtd": {"image_size": 224, "num_classes": 47, "num_channels": 3},
     "aircrafts": {"image_size": 224, "num_classes": 100, "num_channels": 3},
+    "cub200": {"image_size": 224, "num_classes": 200, "num_channels": 3},
 }
 
 
