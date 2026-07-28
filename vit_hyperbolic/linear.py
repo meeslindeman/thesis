@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from vit_hyperbolic.lorentz import Lorentz
 
-
+# Torres
 class LorentzFullyConnected(nn.Module):
     def __init__(
         self,
